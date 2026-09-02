@@ -1,0 +1,5 @@
+config STM32F2XX_ADC
+    bool
+
+config S32K3_ADC
+    bool

@@ -1,0 +1,144 @@
+/*
+*   (c) Copyright 2020 - 2026 NXP
+*   All Rights Reserved.
+*
+*   NXP Confidential and Proprietary. This software is owned or controlled by NXP and may only be
+*   used strictly in accordance with the applicable license terms. By expressly
+*   accepting such terms or by downloading, installing, activating and/or otherwise
+*   using the software, you are agreeing that you have read, and that you agree to
+*   comply with and are bound by, such license terms. If you do not agree to be
+*   bound by the applicable license terms, then you may not retain, install,
+*   activate or otherwise use the software.
+*
+*   This file contains sample code only. It is not part of the production code deliverables.
+*/
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+
+/*==================================================================================================
+*   Project              : RTD AUTOSAR 4.9
+*   Platform             : CORTEXM
+*   Peripheral           : GMAC
+*   Dependencies         : none
+*
+*   Autosar Version      : 4.9.0
+*   Autosar Revision     : ASR_REL_4_9_REV_0000
+*   Autosar Conf.Variant :
+*   SW Version           : 7.0.1
+*   Build Version        : S32K3_RTD_7_0_1_D2602_ASR_REL_4_9_REV_0000_20260206
+*
+*   Copyright 2020 - 2026 NXP
+*
+*   NXP Confidential and Proprietary. This software is owned or controlled by NXP and may only be
+*   used strictly in accordance with the applicable license terms. By expressly
+*   accepting such terms or by downloading, installing, activating and/or otherwise
+*   using the software, you are agreeing that you have read, and that you agree to
+*   comply with and are bound by, such license terms. If you do not agree to be
+*   bound by the applicable license terms, then you may not retain, install,
+*   activate or otherwise use the software.
+==================================================================================================*/
+#include "Mcu.h"
+#include "Port.h"
+#include "Eth_43_GMAC.h"
+#include "OsIf.h"
+#include "check_example.h"
+
+/*==================================================================================================
+*                          LOCAL TYPEDEFS (STRUCTURES, UNIONS, ENUMS)
+==================================================================================================*/
+
+
+/*==================================================================================================
+*                                       LOCAL MACROS
+==================================================================================================*/
+
+/*==================================================================================================
+*                                      LOCAL CONSTANTS
+==================================================================================================*/
+
+
+/*==================================================================================================
+*                                      LOCAL VARIABLES
+==================================================================================================*/
+
+
+/*==================================================================================================
+*                                      GLOBAL CONSTANTS
+==================================================================================================*/
+
+
+/*==================================================================================================
+*                                      GLOBAL VARIABLES
+==================================================================================================*/
+
+/*==================================================================================================
+*                                   LOCAL FUNCTION PROTOTYPES
+==================================================================================================*/
+
+
+/*==================================================================================================
+*                                       LOCAL FUNCTIONS
+==================================================================================================*/
+
+
+/*==================================================================================================
+*                                       GLOBAL FUNCTIONS
+==================================================================================================*/
+/**
+* @brief        Transmit one Ethernet frame to the external MAC path
+* @details
+*/
+int main(void)
+{
+    Eth_BufIdxType BufferIndex;
+    uint8 *PayloadBuffer;
+    uint16 PayloadLength;
+    boolean Pass = TRUE;
+    uint8 DestMac[6U] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+    uint16 Index;
+
+    OsIf_Init(NULL_PTR);
+
+    /* Initialize all pins using the Port driver */
+    Port_Init(NULL_PTR);
+
+    /* Initialize the Mcu driver */
+    Mcu_Init(NULL_PTR);
+
+    /* Initialize the clock tree and apply PLL as system clock */
+    Mcu_InitClock(McuClockSettingConfig_0);
+
+    Mcu_SetMode(McuModeSettingConf_0);
+
+    Eth_43_GMAC_Init(NULL_PTR);
+
+    Eth_43_GMAC_SetControllerMode(EthConf_EthCtrlConfig_EthCtrlConfig_0, ETH_MODE_ACTIVE);
+
+    Eth_43_GMAC_ProvideTxBuffer(EthConf_EthCtrlConfig_EthCtrlConfig_0, 0U, &BufferIndex, &PayloadBuffer, &PayloadLength);
+
+    for (Index = 0U; Index < 46U; Index++)
+    {
+        PayloadBuffer[Index] = (uint8)(Index + 1U);
+    }
+
+    /* Send a broadcast frame so it is visible on the host tap/pcap backend. */
+    Eth_43_GMAC_Transmit(EthConf_EthCtrlConfig_EthCtrlConfig_0, BufferIndex, (Eth_FrameType)46U, TRUE, 46U, DestMac);
+
+    Eth_43_GMAC_TxConfirmation(EthConf_EthCtrlConfig_EthCtrlConfig_0);
+
+    Eth_43_GMAC_SetControllerMode(EthConf_EthCtrlConfig_EthCtrlConfig_0, ETH_MODE_DOWN);
+
+    Exit_Example(Pass);
+
+    return 0;
+}
+
+
+#ifdef __cplusplus
+}
+#endif
+
+/** @} */

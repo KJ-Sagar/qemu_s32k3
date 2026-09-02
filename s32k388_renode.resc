@@ -1,0 +1,16 @@
+using sysbus
+
+mach create "s32k388"
+machine LoadPlatformDescription @/home/kj/Downloads/renode-1.16.0.linux-portable/renode_1.16.0_portable/platforms/cpus/nxp-s32k388.repl
+
+sysbus LoadELF @/home/kj/workspaceS32DS.3.6.7/LpuartFlexio_Uart_Ip_Example_S32K388/Debug_FLASH/LpuartFlexio_Uart_Ip_Example_S32K388.elf
+
+#sysbus LoadELF @/home/kj/workspaceS32DS.3.6.7/FlexCAN_Ip_Example_S32K388/Debug_FLASH/FlexCAN_Ip_Example_S32K388.elf
+
+# sysbus LoadELF @/home/kj/workspaceS32DS.3.6.7/Uart_Example_S32K388/Debug_FLASH/Uart_Example_S32K388.elf
+
+
+# The firmware exposes VTABLE at 0x402000 and Reset_Handler at 0x402421.
+# Set the Cortex-M vector table offset to the firmware's VTABLE so startup uses the
+# correct reset handler and initial stack.
+sysbus.cpu0 VectorTableOffset `sysbus GetSymbolAddress "VTABLE"`

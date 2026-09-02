@@ -1,0 +1,10 @@
+- The Renode script now loads the firmware from the S32DS build output at the workspace path: s32k388_renode.resc.
+- It uses the official S32K388 platform description from the Renode installation at platforms/cpus/nxp-s32k388.repl, which provides the CPU, memory map, and peripheral model.
+- The firmware image was inspected with tools such as readelf and nm, and the binary exposes:
+  - VTABLE at 0x402000
+  - Reset_Handler at 0x402421
+  - Stack symbols at 0x20010000
+- Renode was configured to use the firmware’s own vector table via:
+  - sysbus.cpu0 VectorTableOffset `sysbus GetSymbolAddress "VTABLE"`
+- The earlier manual PC/SP register setup was removed because it was incompatible with this Renode release and caused startup to halt before execution.
+- This approach lets Renode initialize the Cortex-M core from the ELF’s actual reset vector instead of relying on the default generic startup guess.

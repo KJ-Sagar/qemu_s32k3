@@ -1,0 +1,19 @@
+-c
+-I../RTD/include
+-I"/home/kj/workspaceS32DS.3.6.7/Eth_InternalLoopback_S32K388/generate/include"
+-I"/home/kj/workspaceS32DS.3.6.7/Eth_InternalLoopback_S32K388/RTD/include"
+-I"/home/kj/workspaceS32DS.3.6.7/Eth_InternalLoopback_S32K388/board"
+-I"/home/kj/NXP/S32DS.3.6.7/S32DS/software/PlatformSDK_S32K3/RTD/BaseNXP_TS_T40D34M70I1R0/header"
+-I"/home/kj/NXP/S32DS.3.6.7/S32DS/software/PlatformSDK_S32K3/RTD/BaseNXP_TS_T40D34M70I1R0/include"
+-I"/home/kj/NXP/S32DS.3.6.7/S32DS/software/PlatformSDK_S32K3/RTD/Platform_TS_T40D34M70I1R0/include"
+-I"/home/kj/NXP/S32DS.3.6.7/S32DS/software/PlatformSDK_S32K3/RTD/Platform_TS_T40D34M70I1R0/startup/include"
+-x assembler-with-cpp
+-ggdb3
+-mcpu=cortex-m7
+-mthumb
+-mlittle-endian
+-mfloat-abi=hard
+-mfpu=fpv5-sp-d16
+-specs=nano.specs
+-specs=nosys.specs
+--sysroot="/home/kj/NXP/S32DS.3.6.7/S32DS/build_tools/gcc_v10.2/gcc-10.2-arm32-eabi/arm-none-eabi/lib"
