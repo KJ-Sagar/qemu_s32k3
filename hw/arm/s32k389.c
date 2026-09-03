@@ -33,7 +33,16 @@
 #include "hw/core/irq.h"
 #include <stdio.h>
 #include <time.h>
- 
+
+/*
+ * Keep the SWT implementation object in the S32K389 link. The generic HMP
+ * monitor has only a weak reference because other machine targets do not
+ * include the optional SWT model.
+ */
+static void (*const s32k389_swt_trigger_link_anchor)(uint32_t, Error **)
+    __attribute__((used)) =
+    s32k3_swt_trigger;
+
  
 /*
 * Real MC_ME peripheral (base 0x402DC000, verified against manual section

@@ -18,7 +18,6 @@
 #include "monitor/hmp.h"
 #include "monitor/hmp-completion.h"
 #include "monitor/monitor.h"
-#include "hw/watchdog/s32k3_swt.h"
 #include "qapi/error.h"
 #include "qapi/qapi-commands-run-state.h"
 #include "qobject/qdict.h"
@@ -29,7 +28,10 @@
  * Keep the generic HMP command linkable everywhere; the SWT model provides
  * the strong implementation when that device is enabled.
  */
-void __attribute__((weak)) s32k3_swt_trigger(uint32_t instance_id, Error **errp)
+void s32k3_swt_trigger(uint32_t instance_id, Error **errp)
+    __attribute__((weak));
+
+static void hmp_swt_trigger_unavailable(uint32_t instance_id, Error **errp)
 {
     (void)instance_id;
     error_setg(errp, "S32K3 SWT support is not available in this QEMU target");
@@ -99,7 +101,11 @@ void hmp_swt_trigger(Monitor *mon, const QDict *qdict)
     Error *err = NULL;
     uint32_t instance_id = qdict_get_uint(qdict, "instance");
 
-    s32k3_swt_trigger(instance_id, &err);
+    if (s32k3_swt_trigger) {
+        s32k3_swt_trigger(instance_id, &err);
+    } else {
+        hmp_swt_trigger_unavailable(instance_id, &err);
+    }
     if (err) {
         hmp_handle_error(mon, err);
     }
