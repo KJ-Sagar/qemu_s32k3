@@ -151,6 +151,7 @@ void hmp_human_readable_text_helper(Monitor *mon,
 void hmp_info_stats(Monitor *mon, const QDict *qdict);
 void hmp_one_insn_per_tb(Monitor *mon, const QDict *qdict);
 void hmp_watchdog_action(Monitor *mon, const QDict *qdict);
+void hmp_swt_trigger(Monitor *mon, const QDict *qdict);
 void hmp_pcie_aer_inject_error(Monitor *mon, const QDict *qdict);
 void hmp_info_capture(Monitor *mon, const QDict *qdict);
 void hmp_stopcapture(Monitor *mon, const QDict *qdict);

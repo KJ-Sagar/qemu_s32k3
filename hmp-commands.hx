@@ -1441,6 +1441,20 @@ SRST
 ERST
 
     {
+        .name       = "swt_trigger",
+        .args_type  = "instance:i",
+        .params     = "instance",
+        .help       = "arm and trigger an S32K3 SWT instance",
+        .cmd        = hmp_swt_trigger,
+    },
+
+SRST
+``swt_trigger`` *instance*
+  Arm and immediately trigger the selected S32K3 SWT instance. The action
+  configured by ``watchdog_action`` is then performed.
+ERST
+
+    {
         .name       = "nbd_server_start",
         .args_type  = "all:-a,writable:-w,uri:s",
         .params     = "nbd_server_start [-a] [-w] host:port",

@@ -32,6 +32,7 @@
 #define HW_WATCHDOG_S32K3_SWT_H
 
 #include "hw/core/sysbus.h"
+#include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
 
@@ -75,7 +76,10 @@
 #define S32K3_SWT_COUNTER_HZ 32768
 
 #define TYPE_S32K3_SWT "s32k3-swt"
+#define S32K3_SWT_MAX_INSTANCES 4
 OBJECT_DECLARE_SIMPLE_TYPE(S32K3SWTState, S32K3_SWT)
+
+void s32k3_swt_trigger(uint32_t instance_id, Error **errp);
 
 struct S32K3SWTState {
     SysBusDevice parent_obj;

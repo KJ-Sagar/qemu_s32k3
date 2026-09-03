@@ -18,6 +18,8 @@
 #include "qom/object.h"
 #include "s32k3_swt.h"
 
+static S32K3SWTState *s32k3_swt_instances[S32K3_SWT_MAX_INSTANCES];
+
 static int64_t s32k3_swt_counts_to_ns(uint32_t counts)
 {
     return (int64_t)counts * 1000000000LL / S32K3_SWT_COUNTER_HZ;
@@ -72,6 +74,28 @@ static void s32k3_swt_timeout(void *opaque)
                   "s32k3_swt[%u]: watchdog timeout, performing configured "
                   "watchdog action\n", s->instance_id);
     watchdog_perform_action();
+}
+
+void s32k3_swt_trigger(uint32_t instance_id, Error **errp)
+{
+    S32K3SWTState *s;
+
+    if (instance_id >= ARRAY_SIZE(s32k3_swt_instances) ||
+        !(s = s32k3_swt_instances[instance_id])) {
+        error_setg(errp, "S32K3 SWT instance %u is not available", instance_id);
+        return;
+    }
+
+    /*
+     * This is an explicit monitor test hook: arm the selected SWT with the
+     * shortest possible timeout and bypass interrupt-then-reset mode so the
+     * configured QEMU watchdog action is reached on this expiry.
+     */
+    s->to = 1;
+    s->cr |= S32K3_SWT_CR_WEN;
+    s->cr &= ~S32K3_SWT_CR_ITR;
+    s->timed_out_once = false;
+    timer_mod(s->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 static void s32k3_swt_service(S32K3SWTState *s)
@@ -274,6 +298,13 @@ static void s32k3_swt_instance_init(Object *obj)
 
 static void s32k3_swt_realize(DeviceState *dev, Error **errp)
 {
+    S32K3SWTState *s = S32K3_SWT(dev);
+
+    if (s->instance_id >= ARRAY_SIZE(s32k3_swt_instances)) {
+        error_setg(errp, "invalid S32K3 SWT instance id %u", s->instance_id);
+        return;
+    }
+    s32k3_swt_instances[s->instance_id] = s;
     s32k3_swt_reset(dev);
 }
 
