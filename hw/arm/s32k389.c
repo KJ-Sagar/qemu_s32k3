@@ -327,7 +327,12 @@ static bool s32k389_realize_sysbus_device(DeviceState *dev,
         return false;
     }
 
-    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, base);
+    /*
+     * The board has a low-priority catch-all peripheral aperture. Use an
+     * explicit higher-priority mapping for concrete devices so their MMIO
+     * handlers receive accesses in overlapping regions.
+     */
+    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 0, base, 1);
 
     if (irq >= 0) {
         sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
@@ -785,7 +790,15 @@ static void s32k389_init(MachineState* machine) {
  
     // Implement system bus device
     sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), &error_local);
- 
+
+    /*
+     * Install the catch-all peripheral aperture before concrete devices.
+     * Specific MMIO regions added below must take precedence over this
+     * fallback; mapping it last would swallow guest accesses to real devices.
+     */
+    create_unimplemented_device("s32k3x8.peripherals", S32K3_PERIPH_BASE,
+                                16 * MiB);
+
     // Initialize the board's console and simple serial helpers first so the
     // machine can expose UART traffic before the rest of the peripheral set is
     // brought up.
@@ -843,8 +856,6 @@ static void s32k389_init(MachineState* machine) {
     s32k389_init_qspi(s, &s->armv7m);
     s32k389_init_sai(s, &s->armv7m);
  
-    // Map any missing S32K3 peripheral region used by firmware
-    create_unimplemented_device("s32k3x8.peripherals", S32K3_PERIPH_BASE, 16 * MiB);
     // Real MSCM aperture. This must overlay the broad eDMA channel mapping
     // too, because the older eDMA model exposes all 32 TCD windows as one
     // contiguous block starting at 0x40210000.
