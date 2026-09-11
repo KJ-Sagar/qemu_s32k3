@@ -53,6 +53,19 @@ The resulting ELF is:
 
 No new guest ELF is needed for QEMU model-only changes, but this ELF is useful for testing automatic expiry.
 
+## Multicore watchdog fault firmware
+
+The multicore test image is
+[watchdog_multicore_fault_test.c](../Eth_InternalLoopback_S32K388/src/watchdog_multicore_fault_test.c).
+All four S32K389 cores execute the image, claim diagnostic SRAM slots, and
+enter non-servicing loops. The atomic allocation counter rotates the SWT0
+configuration owner on each boot, so watchdog reset need not clear shared SRAM
+and only one core performs the unlock sequence.
+
+The resulting ELF is:
+
+[Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf](../Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf)
+
 ## Build the QEMU binary
 
 From the repository root:

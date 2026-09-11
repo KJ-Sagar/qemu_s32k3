@@ -20,9 +20,6 @@ static uint32_t claim_core_slot(void)
 
     do {
         old_value = CORE_MARKERS[4];
-        if (old_value >= 4u) {
-            return 3u;
-        }
         new_value = old_value + 1u;
         __asm__ volatile ("ldrex %0, [%3]\n"
                           "strex %1, %2, [%3]\n"
@@ -42,8 +39,9 @@ int main(void)
     CORE_MARKERS[slot] = state;
 
     /*
-     * Only the first core arms the shared SWT. The other cores independently
-     * enter the same non-servicing fault condition.
+     * SWT0 is shared by the cores. The atomic counter rotates ownership on
+     * each boot, so persistent SRAM cannot cause every later boot to skip
+     * watchdog setup, and only one core performs the unlock sequence.
      */
     if (slot == 0u) {
         SWT0_SR = 0xC520u;
