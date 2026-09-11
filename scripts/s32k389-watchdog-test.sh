@@ -3,7 +3,7 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 qemu_bin="${QEMU_BIN:-$repo_dir/build/qemu-system-arm}"
-firmware="${S32K389_WATCHDOG_ELF:-$repo_dir/Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogFault.elf}"
+firmware="${S32K389_WATCHDOG_ELF:-$repo_dir/Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf}"
 action="${1:-reset}"
 monitor_port="${MONITOR_PORT:-5555}"
 run_seconds="${RUN_SECONDS:-3}"

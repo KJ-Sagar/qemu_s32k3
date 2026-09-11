@@ -4,12 +4,12 @@
 
 The S32K3 SWT model is connected to the S32K389 board at:
 
-| Instance | Base | IRQ |
-| --- | --- | ---: |
-| SWT0 | `0x40270000` | 177 |
-| SWT1 | `0x4046c000` | 178 |
-| SWT2 | `0x40470000` | 179 |
-| SWT3 | `0x40070000` | 180 |
+| Instance | Base           | IRQ |
+| -------- | -------------- | --: |
+| SWT0     | `0x40270000` | 177 |
+| SWT1     | `0x4046c000` | 178 |
+| SWT2     | `0x40470000` | 179 |
+| SWT3     | `0x40070000` | 180 |
 
 The model uses a 32,768 Hz counter clock:
 
@@ -19,11 +19,11 @@ timeout_seconds = TO / 32768
 
 Examples:
 
-| `TO` | Duration |
-| ---: | ---: |
-| `1` | approximately 30.5 us |
+|    `TO` |              Duration |
+| --------: | --------------------: |
+|     `1` | approximately 30.5 us |
 | `0x320` | approximately 24.4 ms |
-| `32768` | approximately 1 s |
+| `32768` |     approximately 1 s |
 
 The normal firmware cycle is:
 
