@@ -53,6 +53,67 @@ The resulting ELF is:
 
 No new guest ELF is needed for QEMU model-only changes, but this ELF is useful for testing automatic expiry.
 
+## Multicore watchdog fault firmware
+
+The multicore test image is
+[watchdog_multicore_fault_test.c](../Eth_InternalLoopback_S32K388/src/watchdog_multicore_fault_test.c).
+All four S32K389 cores execute the image and claim diagnostic SRAM slots. The
+atomic allocation counter rotates the SWT0 configuration owner on each boot,
+so watchdog reset need not clear shared SRAM and only one core performs the
+unlock sequence. After SWT0 is armed, the cores enter deterministic,
+core-specific failure modes: CPU-bound deadlock, usage fault, hard fault, or a
+corrupted-state loop. None services SWT0, so the shared watchdog eventually
+resets the board.
+
+The resulting ELF is:
+
+[Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf](../Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf)
+
+### Guest execution diagnostics
+
+The firmware does not use `printf`; the image has no guaranteed initialized
+console for all four cores. Instead, it writes phase and heartbeat values to
+shared SRAM at `0x2040f000`:
+
+| Address | Meaning |
+|---|---|
+| `+0x00`, `+0x08`, `+0x10`, `+0x18` | Core-slot phase |
+| `+0x04`, `+0x0c`, `+0x14`, `+0x1c` | Core-slot heartbeat |
+| `+0x20` | Atomic slot-allocation counter |
+| `+0x28` | Watchdog-arm status |
+
+Phase values are:
+
+```text
+0x10000000 + slot  claimed a slot
+0x20000000 + slot  core armed SWT0 (global status at `+0x28`)
+0x30000000 + slot  CPU-bound deadlock loop
+0x40000000 + slot  usage fault (UDF)
+0x50000000 + slot  hard-fault test (UDF)
+0x60000000 + slot  corrupted-state-style loop
+```
+
+Before the watchdog action, inspect the markers from the QEMU monitor:
+
+```text
+xp/12xw 0x2040f000
+xp/8xw  0x40270000
+info registers
+```
+
+The heartbeat words change continuously for cores that reached their loop.
+The phase words remain stable and identify how far each core progressed.
+After a reset, these values may be overwritten by the next boot; use
+`watchdog_action pause` when inspecting transient state.
+
+QEMU execution and exception logging should be enabled from the host:
+
+```bash
+build/qemu-system-arm ... -d int,guest_errors -D /tmp/s32k389-qemu.log \
+  -msg timestamp=on
+grep -E 'HardFault|UsageFault|s32k3_swt|watchdog' /tmp/s32k389-qemu.log
+```
+
 ## Build the QEMU binary
 
 From the repository root:
