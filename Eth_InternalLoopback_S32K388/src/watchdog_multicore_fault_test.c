@@ -1,7 +1,7 @@
 #include <stdint.h>
 
 #define SWT0_BASE 0x40270000u
-#define SWT0_CR (*(volatile uint32_t *)(SWT0_BASE + 0x00u))
+#define  SWT0_CR (*(volatile uint32_t *)(SWT0_BASE + 0x00u))
 #define SWT0_SR (*(volatile uint32_t *)(SWT0_BASE + 0x10u))
 #define SWT0_TO (*(volatile uint32_t *)(SWT0_BASE + 0x08u))
 
