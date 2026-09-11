@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 2026-09-11T09:01:07.689717Z Initializing S32K389
 2026-09-11T09:01:07.689760Z Initializing memory regions
 2026-09-11T09:01:07.690444Z Memory regions successfully initialized
@@ -67,3 +68,40 @@
 2026-09-11T09:01:13.730216Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
 2026-09-11T09:01:13.730252Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
 2026-09-11T09:01:13.730288Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+=======
+2026-09-11T08:51:09.022281Z Initializing S32K389
+2026-09-11T08:51:09.022325Z Initializing memory regions
+2026-09-11T08:51:09.022942Z Memory regions successfully initialized
+2026-09-11T08:51:09.023448Z Loaded reset SP 0x0 PC 0x0 from vector table
+2026-09-11T08:51:09.023912Z Initializing UART
+2026-09-11T08:51:09.024057Z Initializing FlexCAN instances
+2026-09-11T08:51:09.024874Z FlexCAN instances initialized
+2026-09-11T08:51:09.024882Z Initializing LPSPI instances
+2026-09-11T08:51:09.025345Z LPSPI instances initialized
+2026-09-11T08:51:09.025351Z Initializing LPI2C instances
+2026-09-11T08:51:09.025533Z LPI2C instances initialized
+2026-09-11T08:51:09.025535Z Initializing SWT instances
+2026-09-11T08:51:09.025982Z SWT instances initialized
+2026-09-11T08:51:09.026110Z Initializing ADC instances
+2026-09-11T08:51:09.026541Z ADC instances initialized
+2026-09-11T08:51:09.026544Z Initializing eMIOS instances
+2026-09-11T08:51:09.026927Z eMIOS instances initialized
+2026-09-11T08:51:09.026952Z Initializing eDMA
+2026-09-11T08:51:09.027333Z eDMA initialized
+2026-09-11T08:51:09.027337Z Initializing GMAC Ethernet instances
+2026-09-11T08:51:09.027664Z GMAC Ethernet instances initialized
+2026-09-11T08:51:09.027683Z Initializing QuadSPI
+2026-09-11T08:51:09.033409Z QuadSPI initialized
+2026-09-11T08:51:09.033428Z Initializing SAI
+2026-09-11T08:51:09.033777Z SAI instances initialized
+2026-09-11T08:51:09.044625Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+2026-09-11T08:51:09.046567Z Core 1 (core1) initialized
+2026-09-11T08:51:09.048755Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+2026-09-11T08:51:09.050555Z Core 2 (core2) initialized
+2026-09-11T08:51:09.053888Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+2026-09-11T08:51:09.056064Z Core 3 (core3) initialized
+2026-09-11T08:51:09.056329Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+2026-09-11T08:51:09.056349Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+2026-09-11T08:51:09.056363Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+2026-09-11T08:51:09.056373Z Loaded reset SP 0x20010000 PC 0x402421 from vector table
+>>>>>>> main
