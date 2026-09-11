@@ -6,7 +6,7 @@ qemu_bin="${QEMU_BIN:-$repo_dir/build/qemu-system-arm}"
 firmware="${S32K389_WATCHDOG_ELF:-$repo_dir/Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf}"
 action="${1:-reset}"
 monitor_port="${MONITOR_PORT:-5555}"
-run_seconds="${RUN_SECONDS:-3}"
+run_seconds="${RUN_SECONDS:-60}"
 log_file="${WATCHDOG_LOG:-$repo_dir/s32k389-watchdog-test.log}"
 
 if [[ "$action" != "reset" && "$action" != "pause" ]]; then
