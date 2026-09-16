@@ -1,220 +1,204 @@
-# S32K389 watchdog testing
+# S32K389 Watchdog Binary Test
 
-## What is implemented
+## Purpose
 
-The S32K3 SWT model is connected to the S32K389 board at:
+The test binary
+[Eth_InternalLoopback_S32K389_WatchdogMulticoreFault.elf](../ELF/s32k389/Eth_InternalLoopback_S32K389_WatchdogMulticoreFault.elf)
+is a deliberately faulty S32K389 guest image. It verifies that the QEMU SWT
+watchdog detects loss of watchdog servicing and performs the configured
+`reset` or `pause` action without using the manual `swt_trigger` command.
 
-| Instance | Base           | IRQ |
-| -------- | -------------- | --: |
-| SWT0     | `0x40270000` | 177 |
-| SWT1     | `0x4046c000` | 178 |
-| SWT2     | `0x40470000` | 179 |
-| SWT3     | `0x40070000` | 180 |
+The S32K389 model creates four Cortex-M7 cores. All cores execute the same ELF.
+SWT0 is shared, so one timeout event controls the board-level action.
 
-The model uses a 32,768 Hz counter clock:
+## Binary workflow
 
-```text
-timeout_seconds = TO / 32768
-```
+1. QEMU loads the ELF through the reset vector.
+2. Each core enters `main()` and atomically claims a diagnostic slot from
+   shared SRAM.
+3. Each core records that it reached the test.
+4. The core assigned slot 0 unlocks and configures the shared SWT0.
+5. SWT0 is configured for approximately one second.
+6. Every core stops servicing the watchdog and enters a deterministic fault
+   state:
+   - slot 0: CPU-bound non-servicing loop;
+   - slot 1: undefined instruction (`UDF #0`);
+   - slot 2: second undefined-instruction path (`UDF #1`);
+   - slot 3: non-servicing corrupted-state-style loop.
+7. SWT0 expires and QEMU performs the selected watchdog action.
 
-Examples:
-
-|    `TO` |              Duration |
-| --------: | --------------------: |
-|     `1` | approximately 30.5 us |
-| `0x320` | approximately 24.4 ms |
-| `32768` |     approximately 1 s |
-
-The normal firmware cycle is:
-
-1. Unlock SWT software lock with `SR = 0xc520`, followed by `SR = 0xd928`.
-2. Write a timeout to `TO`.
-3. Set `CR[WEN]`.
-4. Service with `SR = 0xa602`, followed by `SR = 0xb480`, before expiry.
-5. If the service sequence is omitted, `IR[TIF]` is set and the configured QEMU watchdog action runs.
-
-With `CR[ITR]` set, the first timeout raises the SWT interrupt and reloads the timer; the second timeout performs the configured action. Clearing `ITR` makes the first timeout perform the action.
-
-## Watchdog fault firmware
-
-The test firmware is [watchdog_fault_test.c](../Eth_InternalLoopback_S32K388/src/watchdog_fault_test.c). It:
-
-- writes `32768` to SWT0 `TO`;
-- writes `1` to SWT0 `CR`;
-- never writes the service sequence;
-- executes a busy loop so the timeout does not depend on low-power clock behavior.
-
-Because SWT reset state is software-locked, the firmware first writes the
-documented unlock keys (`0xc520`, `0xd928`) to `SR`.
-
-The resulting ELF is:
-
-[Eth_InternalLoopback_S32K388_WatchdogFault.elf](../Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogFault.elf)
-
-No new guest ELF is needed for QEMU model-only changes, but this ELF is useful for testing automatic expiry.
-
-## Multicore watchdog fault firmware
-
-The multicore test image is
+The source is
 [watchdog_multicore_fault_test.c](../Eth_InternalLoopback_S32K388/src/watchdog_multicore_fault_test.c).
-All four S32K389 cores execute the image and claim diagnostic SRAM slots. The
-atomic allocation counter rotates the SWT0 configuration owner on each boot,
-so watchdog reset need not clear shared SRAM and only one core performs the
-unlock sequence. After SWT0 is armed, the cores enter deterministic,
-core-specific failure modes: CPU-bound deadlock, usage fault, hard fault, or a
-corrupted-state loop. None services SWT0, so the shared watchdog eventually
-resets the board.
 
-The resulting ELF is:
+## Watchdog configuration
 
-[Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf](../Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogMulticoreFault.elf)
-
-### Guest execution diagnostics
-
-The firmware does not use `printf`; the image has no guaranteed initialized
-console for all four cores. Instead, it writes phase and heartbeat values to
-shared SRAM at `0x2040f000`:
-
-| Address | Meaning |
-|---|---|
-| `+0x00`, `+0x08`, `+0x10`, `+0x18` | Core-slot phase |
-| `+0x04`, `+0x0c`, `+0x14`, `+0x1c` | Core-slot heartbeat |
-| `+0x20` | Atomic slot-allocation counter |
-| `+0x28` | Watchdog-arm status |
-
-Phase values are:
+SWT0 base address:
 
 ```text
-0x10000000 + slot  claimed a slot
-0x20000000 + slot  core armed SWT0 (global status at `+0x28`)
-0x30000000 + slot  CPU-bound deadlock loop
-0x40000000 + slot  usage fault (UDF)
-0x50000000 + slot  hard-fault test (UDF)
-0x60000000 + slot  corrupted-state-style loop
+0x40270000
 ```
 
-Before the watchdog action, inspect the markers from the QEMU monitor:
+Registers used:
+
+| Register | Address | Use |
+|---|---:|---|
+| `CR` | `0x40270000` | Enable watchdog with `WEN = 1` |
+| `TO` | `0x40270008` | Set timeout |
+| `SR` | `0x40270010` | Unlock SWT |
+
+The binary writes:
+
+```c
+SWT0_SR = 0xC520;
+SWT0_SR = 0xD928;
+SWT0_TO = 32768;
+SWT0_CR = 1;
+```
+
+The QEMU model uses a 32,768 Hz SWT clock:
+
+```text
+32768 counts / 32768 Hz = approximately 1 second
+```
+
+`CR[ITR]` remains clear, so the first timeout performs the configured QEMU
+watchdog action. The binary never writes the SWT service sequence
+`0xA602`, `0xB480`.
+
+## Diagnostic SRAM
+
+The binary writes debug state to shared SRAM starting at `0x2040f000`:
+
+| Offset | Meaning |
+|---:|---|
+| `0x00`, `0x08`, `0x10`, `0x18` | Per-core phase |
+| `0x04`, `0x0c`, `0x14`, `0x1c` | Per-core heartbeat |
+| `0x20` | Atomic slot counter |
+| `0x28` | SWT-arm status |
+
+Inspect these values before a timeout with:
 
 ```text
 xp/12xw 0x2040f000
-xp/8xw  0x40270000
-info registers
 ```
 
-The heartbeat words change continuously for cores that reached their loop.
-The phase words remain stable and identify how far each core progressed.
-After a reset, these values may be overwritten by the next boot; use
-`watchdog_action pause` when inspecting transient state.
+The heartbeat changes while a core is executing. Phase values identify the
+state reached by each core. Use pause mode for inspection because reset mode
+can immediately start another boot and overwrite the markers.
 
-QEMU execution and exception logging should be enabled from the host:
+## Build locations
 
-```bash
-build/qemu-system-arm ... -d int,guest_errors -D /tmp/s32k389-qemu.log \
-  -msg timestamp=on
-grep -E 'HardFault|UsageFault|s32k3_swt|watchdog' /tmp/s32k389-qemu.log
+QEMU executable:
+
+```text
+build/qemu-system-arm
 ```
 
-## Build the QEMU binary
-
-From the repository root:
+Build QEMU:
 
 ```bash
 ninja -C build qemu-system-arm
 ```
 
-The executable is `build/qemu-system-arm`.
+Watchdog ELF:
 
-## Automatic reset test
+```text
+ELF/s32k389/Eth_InternalLoopback_S32K389_WatchdogMulticoreFault.elf
+```
 
-The firmware unlocks and arms SWT0 automatically. Do not use `swt_trigger`.
+The ELF is an ARM Cortex-M7 ELF32 image and is built separately from QEMU
+using the existing S32DS-generated compiler/linker configuration.
+
+## Automated tests
+
+From the repository root:
 
 ```bash
 scripts/s32k389-watchdog-test.sh reset
 ```
 
-Expected output includes:
+Expected result:
 
 ```text
 VM status: running
 watchdog reset test passed
 ```
 
-The VM remains running because the watchdog reset restarts the guest.
+The watchdog reset restarts the guest, so QEMU remains running.
 
-## Automatic pause test
+Test pause behavior:
 
 ```bash
-scripts/s32k389-watchdog-test.sh pause
+MONITOR_PORT=5600 scripts/s32k389-watchdog-test.sh pause
 ```
 
-Expected output includes:
+Expected result:
 
 ```text
 VM status: paused (watchdog)
 watchdog pause test passed
 ```
 
-If monitor port 5555 is already in use, select another port:
+The script uses the multicore ELF by default. Override values when needed:
 
 ```bash
-MONITOR_PORT=5565 scripts/s32k389-watchdog-test.sh pause
+QEMU_BIN=/path/to/qemu-system-arm \
+S32K389_WATCHDOG_ELF=/path/to/test.elf \
+MONITOR_PORT=5600 \
+RUN_SECONDS=3 \
+scripts/s32k389-watchdog-test.sh reset
 ```
 
-The script writes the QEMU debug log to `s32k389-watchdog-test.log`. Inspect it from the host shell:
-
-```bash
-grep -E 's32k3_swt|watchdog' s32k389-watchdog-test.log
-```
-
-Expected timeout message:
+The script writes the QEMU log to `s32k389-watchdog-test.log` and verifies
+that it contains:
 
 ```text
 s32k3_swt[0]: watchdog timeout, performing configured watchdog action
 ```
 
-## Manual monitor test
-
-Launch QEMU with:
+## Manual QEMU run
 
 ```bash
 build/qemu-system-arm \
   -M s32k389 \
-  -kernel Eth_InternalLoopback_S32K388/Debug_FLASH/Eth_InternalLoopback_S32K388_WatchdogFault.elf \
+  -kernel ELF/s32k389/Eth_InternalLoopback_S32K389_WatchdogMulticoreFault.elf \
   -watchdog-action pause \
   -d int,guest_errors \
   -D /tmp/s32k389-qemu.log \
+  -msg timestamp=on \
   -display none \
-  -serial telnet:127.0.0.1:5556,server=on,wait=off \
   -monitor telnet:127.0.0.1:5555,server=on,wait=off
 ```
 
-Connect to the QEMU monitor:
+Connect to the monitor:
 
 ```bash
 telnet 127.0.0.1 5555
 ```
 
-Valid monitor commands:
+Useful monitor commands:
 
 ```text
 info status
 info registers
+xp/12xw 0x2040f000
 xp/8xw 0x40270000
-watchdog_action pause
-watchdog_action reset
-swt_trigger 0
-cont
 ```
 
-`watchdog_action` selects the action; it does not trigger or resume the VM. `swt_trigger 0` is an explicit immediate test hook. It sets `TO = 1`, sets `WEN`, clears `ITR`, and schedules expiry. It is not required for the automatic firmware test.
+The watchdog action can be selected at runtime:
 
-Use `cont` after a pause before attempting another test. Shell commands such as `grep` must be run in the host terminal, not at the `(qemu)` prompt.
+```text
+watchdog_action pause
+watchdog_action reset
+```
 
-## Observed results
+`watchdog_action` selects behavior; it does not trigger the timer. The
+automatic firmware test does not require `swt_trigger`. Use `cont` to resume
+after a watchdog pause.
 
-- The HMP command parser initially failed because command documentation was placed after the next command definition; the documentation was reordered.
-- Generic QEMU targets initially failed to link because the monitor handler referenced the optional SWT implementation. A weak fallback was added, and the S32K389 board provides a link anchor for the real implementation.
-- `qemu-system-arm` and `qemu-system-avr` were rebuilt successfully.
-- `watchdog_action pause` followed by `swt_trigger 0` produced `VM status: paused (watchdog)`.
-- `watchdog_action reset` produced the SWT timeout log and restarted the guest; the VM then reported `running`.
-- The post-reset SWT registers show reset/firmware values, so transient trigger values should be inspected with the pause action.
+Inspect exception and watchdog logging from the host shell, not the QEMU
+monitor:
+
+```bash
+grep -E 'HardFault|UsageFault|s32k3_swt|watchdog' /tmp/s32k389-qemu.log
+```
