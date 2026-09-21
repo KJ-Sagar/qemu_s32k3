@@ -142,14 +142,10 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 #define S32K3_LPI2C0_BASE (S32K3_PERIPH_BASE + 0x350000)  // 0x40350000
 #define S32K3_LPI2C1_BASE (S32K3_PERIPH_BASE + 0x354000)  // 0x40354000
 // LPI2C Interrupts
-// UNVERIFIED PLACEHOLDER: the S32K3xx_interrupt_map.xlsx spreadsheet that
-// the LPSPI/FlexCAN IRQ numbers above were cross-checked against was not
-// among the uploaded reference files, so these two numbers are only a
-// best-effort placeholder (chosen from the range immediately after the
-// verified LPSPI block) and have NOT been confirmed against the real
-// interrupt map. Update these once that spreadsheet is available.
-#define S32K3_LPI2C0_IRQ 175
-#define S32K3_LPI2C1_IRQ 176
+// Verified against S32K3xx_interrupt_map.xlsx ("Interrupts" sheet, S32K389
+// column): LPI2C 0 = IRQ 161, LPI2C 1 = IRQ 162.
+#define S32K3_LPI2C0_IRQ 161
+#define S32K3_LPI2C1_IRQ 162
 
 // SWT (Software Watchdog Timer) - one per Cortex-M7 core (manual Table 430:
 // S32K389 populates all 4). Base addresses verified against S32K3xx
@@ -181,11 +177,11 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 #define S32K3_ADC1_BASE 0x400A4000
 #define S32K3_ADC2_BASE 0x400A8000
 // ADC Interrupts
-// UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
-// caveat applies (interrupt map spreadsheet not available).
-#define S32K3_ADC0_IRQ 181
-#define S32K3_ADC1_IRQ 182
-#define S32K3_ADC2_IRQ 183
+// Verified against S32K3xx_interrupt_map.xlsx ("Interrupts" sheet): ADC 0/1/2
+// are 180/181/182 respectively in the S32K389 column.
+#define S32K3_ADC0_IRQ 180
+#define S32K3_ADC1_IRQ 181
+#define S32K3_ADC2_IRQ 182
 
 // eMIOS
 // Base addresses verified against S32K3xx Reference Manual section
@@ -196,14 +192,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 #define S32K3_EMIOS1_BASE 0x4008C000
 #define S32K3_EMIOS2_BASE 0x40090000
 // eMIOS Interrupts
-// UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
-// caveat applies (interrupt map spreadsheet not available). Real silicon
-// likely has one IRQ per channel or per small channel group rather than
-// one per instance; this model exposes a single OR'd IRQ per instance
-// (see s32k3_emios.h scope note), so only 3 placeholder numbers are used.
-#define S32K3_EMIOS0_IRQ 184
-#define S32K3_EMIOS1_IRQ 185
-#define S32K3_EMIOS2_IRQ 186
+// Verified against S32K3xx_interrupt_map.xlsx: the S32K389 rows for eMIOS 0/1/2
+// are IRQ 61, 69, and 77 respectively (the interrupt request vectors map to the
+// per-instance OR'd interrupt lines used by this model).
+#define S32K3_EMIOS0_IRQ 61
+#define S32K3_EMIOS1_IRQ 69
+#define S32K3_EMIOS2_IRQ 77
 
 // eDMA
 // Base addresses verified against S32K3xx Reference Manual sections
@@ -213,11 +207,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 #define S32K3_EDMA_MGMT_BASE 0x4020C000
 #define S32K3_EDMA_CH_BASE   0x40210000
 // eDMA per-channel Interrupts
-// UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
-// caveat applies (interrupt map spreadsheet not available). One IRQ per
-// channel is modeled (32 total), consistent with how most Cortex-M NVIC
-// based SoCs wire each DMA channel to its own vector.
-#define S32K3_EDMA_IRQ_BASE 187 // channels 0..31 -> IRQ 187..218
+// Verified against S32K3xx_interrupt_map.xlsx: the DMA TCD 0..31 vectors start
+// at IRQ 4, so the channel interrupt base is 4 and the modeled range is 4..35.
+#define S32K3_EDMA_IRQ_BASE 4 // channels 0..31 -> IRQ 4..35
 
 // Multi-core
 // Manual section 3.5 "Considerations related to TCM's implementation":
@@ -268,9 +260,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 // reused directly from the already-verified S32K388 model
 // (hw/arm/s32k388.h) on the strength of that grouping, rather than
 // independently re-derived from a S32K389-specific memory-map excerpt.
-// IRQ numbers carried over from the same source - same UNVERIFIED
-// PLACEHOLDER caveat as elsewhere in this file (no interrupt map
-// spreadsheet available).
+// IRQ lines verified against S32K3xx_interrupt_map.xlsx: GMAC0 = IRQ 224,
+// GMAC1 = IRQ 171.
 #define S32K389_GMAC_COUNT 2
 #define S32K389_GMAC0_BASE 0x40484000
 #define S32K389_GMAC1_BASE 0x40488000
@@ -283,9 +274,9 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 // section 80.14.3.1. Single instance (manual section 80.1.1, Table 772).
 #define S32K3_QSPI_BASE      0x404CC000
 #define S32K3_QSPI_ARDB_BASE 0x68000000
-// UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
-// caveat applies (interrupt map spreadsheet not available).
-#define S32K3_QSPI_IRQ 219
+// Verified against S32K3xx_interrupt_map.xlsx: QSPI is IRQ 173 in the S32K389
+// column.
+#define S32K3_QSPI_IRQ 173
 
 // SAI (Synchronous Audio Interface)
 // Base addresses verified against manual section 74.6.1.1 "SAI memory map".
@@ -293,13 +284,14 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 // PARAM reset values also verified there: SAI_0 has 4 data lines wired in
 // its register map (0004_0304h), SAI_1 has 1 (0004_0301h) - see
 // s32k3_sai.h scope note (only 1 channel is actually used per Table 547).
+// The S32K3xx_interrupt_map.xlsx sheet does not contain an SAI IRQ row for the
+// S32K389 column, so the IRQ values below remain model placeholders rather than
+// spreadsheet-validated numbers.
 #define S32K389_NUM_SAI 2
 #define S32K3_SAI0_BASE 0x4036C000
 #define S32K3_SAI1_BASE 0x404DC000
 #define S32K3_SAI0_PARAM_RESET 0x00040304
 #define S32K3_SAI1_PARAM_RESET 0x00040301
-// UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
-// caveat applies (interrupt map spreadsheet not available).
 #define S32K3_SAI0_IRQ 220
 #define S32K3_SAI1_IRQ 221
 
