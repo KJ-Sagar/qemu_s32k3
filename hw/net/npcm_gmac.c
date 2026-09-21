@@ -18,7 +18,7 @@
  *
  * Unsupported/unimplemented features:
  * - MII is not implemented, MII_ADDR.BUSY and MII_DATA always return zero
- * - Precision timestamp (PTP) is not implemented.
+ * - Basic PTP second/nanosecond counters are implemented.
  */
 
 #include "qemu/osdep.h"
@@ -157,6 +157,7 @@ static void npcm_gmac_soft_reset(NPCMGMACState *gmac)
 {
     memcpy(gmac->regs, npcm_gmac_cold_reset_values,
            NPCM_GMAC_NR_REGS * sizeof(uint32_t));
+    gmac->ptp_time_offset_ns = 0;
     /* Clear reset bits */
     gmac->regs[R_NPCM_DMA_BUS_MODE] &= ~NPCM_DMA_BUS_MODE_SWR;
 }
@@ -323,10 +324,170 @@ static int gmac_rx_transfer_frame_to_buffer(uint32_t rx_buf_len,
     return 0;
 }
 
+static uint32_t gmac_crc32_hash(const uint8_t *addr)
+{
+    uint32_t crc = 0xffffffffu;
+
+    for (int i = 0; i < ETH_ALEN; i++) {
+        crc ^= addr[i];
+        for (int bit = 0; bit < 8; bit++) {
+            if (crc & 1) {
+                crc = (crc >> 1) ^ 0xedb88320u;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+
+    return ~crc;
+}
+
+static bool gmac_hash_bit_match(NPCMGMACState *gmac, const uint8_t *addr)
+{
+    uint32_t hash = gmac_crc32_hash(addr);
+    uint32_t bit = hash & 0x3f;
+    uint32_t reg = bit < 32 ? gmac->regs[R_NPCM_GMAC_HASH_LOW]
+                            : gmac->regs[R_NPCM_GMAC_HASH_HIGH];
+
+    return (reg >> (bit & 31)) & 1;
+}
+
+static bool gmac_addr_in_slots(NPCMGMACState *gmac, const uint8_t *addr)
+{
+    for (int slot = 0; slot < 4; slot++) {
+        uint32_t hi, lo;
+        uint8_t mac[ETH_ALEN];
+
+        switch (slot) {
+        case 0:
+            hi = gmac->regs[R_NPCM_GMAC_MAC0_ADDR_HI];
+            lo = gmac->regs[R_NPCM_GMAC_MAC0_ADDR_LO];
+            break;
+        case 1:
+            hi = gmac->regs[R_NPCM_GMAC_MAC1_ADDR_HI];
+            lo = gmac->regs[R_NPCM_GMAC_MAC1_ADDR_LO];
+            break;
+        case 2:
+            hi = gmac->regs[R_NPCM_GMAC_MAC2_ADDR_HI];
+            lo = gmac->regs[R_NPCM_GMAC_MAC2_ADDR_LO];
+            break;
+        default:
+            hi = gmac->regs[R_NPCM_GMAC_MAC3_ADDR_HI];
+            lo = gmac->regs[R_NPCM_GMAC_MAC3_ADDR_LO];
+            break;
+        }
+
+        if (hi == 0xffff && lo == 0xffffffff) {
+            continue;
+        }
+
+        mac[0] = hi >> 8;
+        mac[1] = hi & 0xff;
+        mac[2] = lo >> 24;
+        mac[3] = lo >> 16;
+        mac[4] = lo >> 8;
+        mac[5] = lo;
+
+        if (memcmp(addr, mac, ETH_ALEN) == 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool gmac_rx_frame_allowed(NPCMGMACState *gmac, const uint8_t *frame,
+                                 size_t len)
+{
+    uint32_t frame_filter;
+    const uint8_t *dest;
+    bool is_broadcast;
+    bool is_multicast;
+
+    if (len < ETH_ALEN) {
+        return false;
+    }
+
+    frame_filter = gmac->regs[R_NPCM_GMAC_FRAME_FILTER];
+    dest = frame;
+    is_broadcast = memcmp(dest, (const uint8_t[ETH_ALEN]){ 0xff, 0xff, 0xff,
+                                                           0xff, 0xff, 0xff },
+                          ETH_ALEN) == 0;
+    is_multicast = dest[0] & 1;
+
+    if (frame_filter & NPCM_GMAC_FRAME_FILTER_PR_MASK) {
+        return true;
+    }
+
+    if (gmac_addr_in_slots(gmac, dest)) {
+        return true;
+    }
+
+    if (is_broadcast) {
+        return !!(frame_filter & NPCM_GMAC_FRAME_FILTER_DBF_MASK);
+    }
+
+    if (is_multicast) {
+        if (frame_filter & NPCM_GMAC_FRAME_FILTER_PM_MASK) {
+            return true;
+        }
+        if (frame_filter & NPCM_GMAC_FRAME_FILTER_HMC_MASK) {
+            return gmac_hash_bit_match(gmac, dest);
+        }
+        return false;
+    }
+
+    if (frame_filter & NPCM_GMAC_FRAME_FILTER_HUC_MASK) {
+        return gmac_hash_bit_match(gmac, dest);
+    }
+
+    return false;
+}
+
+static uint64_t gmac_ptp_time_ns(NPCMGMACState *gmac)
+{
+    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+           gmac->ptp_time_offset_ns;
+}
+
+static void gmac_set_ptp_time_regs(NPCMGMACState *gmac)
+{
+    uint64_t ns = gmac_ptp_time_ns(gmac);
+    uint64_t sec = ns / 1000000000ULL;
+    uint32_t subsec = ns % 1000000000ULL;
+
+    gmac->regs[R_NPCM_GMAC_PTP_STSR] = sec;
+    gmac->regs[R_NPCM_GMAC_PTP_STNSR] = subsec;
+    gmac->regs[R_NPCM_GMAC_PTP_STSUR] = sec;
+    gmac->regs[R_NPCM_GMAC_PTP_STNSUR] = subsec;
+    gmac->regs[R_NPCM_GMAC_PTP_TTSR] = sec;
+}
+
+static void gmac_set_ptp_time(NPCMGMACState *gmac, uint32_t sec,
+                              uint32_t nsec)
+{
+    uint64_t requested = (uint64_t)sec * 1000000000ULL + nsec;
+    uint64_t current = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+    gmac->ptp_time_offset_ns = (int64_t)requested - (int64_t)current;
+    gmac_set_ptp_time_regs(gmac);
+}
+
 static void gmac_dma_set_state(NPCMGMACState *gmac, int shift, uint32_t state)
 {
     gmac->regs[R_NPCM_DMA_STATUS] = deposit32(gmac->regs[R_NPCM_DMA_STATUS],
         shift, 3, state);
+}
+
+static void gmac_send_packet(NPCMGMACState *gmac, const uint8_t *buf,
+                             size_t len)
+{
+    if (gmac->regs[R_NPCM_GMAC_MAC_CONFIG] &
+        NPCM_GMAC_MAC_CONFIG_LOOPBACK) {
+        qemu_receive_packet(qemu_get_queue(gmac->nic), buf, len);
+    } else {
+        qemu_send_packet(qemu_get_queue(gmac->nic), buf, len);
+    }
 }
 
 static ssize_t gmac_receive(NetClientState *nc, const uint8_t *buf, size_t len)
@@ -380,10 +541,12 @@ static ssize_t gmac_receive(NetClientState *nc, const uint8_t *buf, size_t len)
         return len;
     }
     /* step 3 */
-    /*
-     * TODO --
-     * Implement all frame filtering and processing (with its own interrupts)
-     */
+    if (!gmac_rx_frame_allowed(gmac, buf, len)) {
+        /* Filtering happens before descriptor ownership is consumed. */
+        gmac->regs[R_NPCM_DMA_MISSED_FRAME_CTR]++;
+        return 0;
+    }
+
     trace_npcm_gmac_debug_desc_data(DEVICE(gmac)->canonical_path, &rx_desc,
                                     rx_desc.rdes0, rx_desc.rdes1, rx_desc.rdes2,
                                     rx_desc.rdes3);
@@ -630,7 +793,14 @@ static void gmac_try_send_next_packet(NPCMGMACState *gmac)
              */
             uint16_t length = prev_buf_size;
             net_checksum_calculate(tx_send_buffer, length, csum);
-            qemu_send_packet(qemu_get_queue(gmac->nic), tx_send_buffer, length);
+            if (gmac->regs[R_NPCM_GMAC_MAC_CONFIG] &
+                NPCM_GMAC_MAC_CONFIG_LOOPBACK) {
+                gmac_send_packet(gmac, tx_send_buffer, length);
+                trace_npcm_gmac_packet_received(DEVICE(gmac)->canonical_path,
+                                                length);
+            } else {
+                gmac_send_packet(gmac, tx_send_buffer, length);
+            }
             trace_npcm_gmac_packet_sent(DEVICE(gmac)->canonical_path, length);
             prev_buf_size = 0;
         }
@@ -718,8 +888,7 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
                 return;
             }
 
-            qemu_send_packet(qemu_get_queue(gmac->nic), tx_send_buffer,
-                             length);
+            gmac_send_packet(gmac, tx_send_buffer, length);
             trace_npcm_gmac_packet_sent(DEVICE(gmac)->canonical_path,
                                         length);
         }
@@ -821,6 +990,15 @@ static uint64_t npcm_gmac_read(void *opaque, hwaddr offset, unsigned size)
          */
         break;
 
+    case A_NPCM_GMAC_PTP_STSR:
+    case A_NPCM_GMAC_PTP_STNSR:
+    case A_NPCM_GMAC_PTP_STSUR:
+    case A_NPCM_GMAC_PTP_STNSUR:
+    case A_NPCM_GMAC_PTP_TTSR:
+        gmac_set_ptp_time_regs(gmac);
+        v = gmac->regs[offset / sizeof(uint32_t)];
+        break;
+
     default:
         v = gmac->regs[offset / sizeof(uint32_t)];
     }
@@ -848,8 +1026,6 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
     case A_NPCM_GMAC_VERSION:
     case A_NPCM_GMAC_INT_STATUS:
     case A_NPCM_GMAC_RGMII_STATUS:
-    case A_NPCM_GMAC_PTP_STSR:
-    case A_NPCM_GMAC_PTP_STNSR:
     case A_NPCM_DMA_MISSED_FRAME_CTR:
     case A_NPCM_DMA_HOST_TX_DESC:
     case A_NPCM_DMA_HOST_RX_DESC:
@@ -892,9 +1068,22 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
     case A_NPCM_GMAC_MAC3_ADDR_HI:
     case A_NPCM_GMAC_MAC3_ADDR_LO:
         gmac->regs[offset / sizeof(uint32_t)] = v;
-        qemu_log_mask(LOG_UNIMP,
-                      "%s: Only MAC Address 0 is supported. This request "
-                      "is ignored.\n", DEVICE(gmac)->canonical_path);
+        break;
+
+    case A_NPCM_GMAC_PTP_STSR:
+        gmac_set_ptp_time(gmac, v, gmac->regs[R_NPCM_GMAC_PTP_STNSR]);
+        break;
+
+    case A_NPCM_GMAC_PTP_STNSR:
+        gmac_set_ptp_time(gmac, gmac->regs[R_NPCM_GMAC_PTP_STSR], v);
+        break;
+
+    case A_NPCM_GMAC_PTP_STSUR:
+        gmac_set_ptp_time(gmac, v, gmac->regs[R_NPCM_GMAC_PTP_STNSUR]);
+        break;
+
+    case A_NPCM_GMAC_PTP_STNSUR:
+        gmac_set_ptp_time(gmac, gmac->regs[R_NPCM_GMAC_PTP_STSUR], v);
         break;
 
     case A_NPCM_DMA_BUS_MODE:
@@ -1047,6 +1236,7 @@ static const VMStateDescription vmstate_npcm_gmac = {
     .minimum_version_id = 0,
     .fields = (VMStateField[]) {
         VMSTATE_UINT32_ARRAY(regs, NPCMGMACState, NPCM_GMAC_NR_REGS),
+        VMSTATE_INT64(ptp_time_offset_ns, NPCMGMACState),
         VMSTATE_END_OF_LIST(),
     },
 };
