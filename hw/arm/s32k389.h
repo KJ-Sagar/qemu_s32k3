@@ -162,10 +162,10 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 // SWT Interrupts
 // UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
 // caveat applies (interrupt map spreadsheet not available).
-#define S32K3_SWT0_IRQ 177
-#define S32K3_SWT1_IRQ 178
-#define S32K3_SWT2_IRQ 179
-#define S32K3_SWT3_IRQ 180
+#define S32K3_SWT0_IRQ 42
+#define S32K3_SWT1_IRQ 43
+#define S32K3_SWT2_IRQ 44
+#define S32K3_SWT3_IRQ 58
 
 // CRC
 // Single instance, no interrupt (manual 58.3.6: "This module has no

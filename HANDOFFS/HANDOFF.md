@@ -61,6 +61,7 @@ This is the single most error-prone part of working in this environment. Get it 
     sed -i 's/\r$//' "$DST/$f"   # strip CRLF
   done
   ```
+
   The full list of files that need this treatment is in §7 below (every file marked "new" or "modified").
 
 ### 3.2 Sandbox persistence is NOT guaranteed
@@ -77,6 +78,7 @@ This is the single most error-prone part of working in this environment. Get it 
 ### 3.4 Toolchain PATH
 
 `ninja` and `meson` are not on the default PATH in a fresh bash call. Every bash call that invokes them needs:
+
 ```bash
 export PATH=/sessions/<session>/.local/bin:$PATH
 ```
@@ -84,10 +86,12 @@ export PATH=/sessions/<session>/.local/bin:$PATH
 ### 3.5 Recurring subproject-fetch flake
 
 `berkeley-softfloat-3` / `berkeley-testfloat-3` meson subprojects sometimes fail to fully fetch (usually after a fresh clone + configure). Fix:
+
 ```bash
 rm -rf /tmp/qbuild/subprojects/berkeley-softfloat-3 /tmp/qbuild/subprojects/berkeley-testfloat-3
 cd /tmp/qbuild/build && ../configure --target-list=arm-softmmu
 ```
+
 This is idempotent — safe to run whenever `ninja` complains about a missing/broken subproject, or when `build.ninja` doesn't exist yet (`ninja: error: loading 'build.ninja': No such file or directory` — this can also just mean the configure call itself got cut off by the 45s timeout before finishing; simply re-run `../configure` again).
 
 ### 3.6 Standard build sequence (copy-paste starting point)
@@ -111,6 +115,7 @@ timeout 6 ./qemu-system-arm -M s32k389 -nographic -monitor stdio -serial null -S
   -device loader,addr=<ADDR2>,data=<VAL2>,data-len=4 \
   ...
 ```
+
 - `-S` freezes the CPU at startup (so nothing executes and clobbers your test state) — but note **`QEMU_CLOCK_VIRTUAL` does not advance while the CPU is paused this way**, which limits how far you can dynamically verify anything timer/tick-driven (eMIOS counters, SAI's FIFO drain timer, SWT countdowns) — you can prove the *setup* and *live-flag-computation* logic works, but not real elapsed-time drain/countdown behavior, from this harness alone. This limitation was hit and explicitly flagged to the user multiple times rather than faking a pass.
 - Multiple `-device loader` entries targeting the **same address** apply strictly in command-line order — this is how sequences of register writes (e.g. "unlock LUT, then load LUT, then trigger IPCR twice") were expressed without needing a real running CPU.
 - `-device loader,addr=X,data=Y,data-len=N,cpu-num=M` targets a specific CPU's private address space (defaults to `first_cpu` / core 0 without `cpu-num=`) — used for multi-core TCM isolation testing.
@@ -127,55 +132,57 @@ timeout 6 ./qemu-system-arm -M s32k389 -nographic -monitor stdio -serial null -S
 This QEMU checkout is a **modern version where several APIs differ from older QEMU tutorials/examples you may have memorized.** Every existing `s32k3_*.c` peripheral in this repo already follows the corrected convention below — **copy an existing sibling file's structure rather than writing from generic QEMU device-model memory.**
 
 1. **Header include paths use the `hw/core/` prefix**, not the bare `hw/` path:
+
    - `#include "hw/core/sysbus.h"` (NOT `"hw/sysbus.h"`)
    - `#include "hw/core/irq.h"` (NOT `"hw/irq.h"`)
    - `#include "hw/core/qdev-properties.h"` (NOT `"hw/qdev-properties.h"`)
-   This tripped up the SAI build in this exact session (`fatal error: hw/sysbus.h: No such file or directory`) — fixed by grepping a sibling file (`hw/timer/s32k3_emios.c`) for its actual include list and matching it exactly.
-
+     This tripped up the SAI build in this exact session (`fatal error: hw/sysbus.h: No such file or directory`) — fixed by grepping a sibling file (`hw/timer/s32k3_emios.c`) for its actual include list and matching it exactly.
 2. **`DeviceClass` in this tree has no `.reset` member at all** (confirmed by reading `include/hw/core/qdev.h`'s `struct DeviceClass` directly — no `reset` field present; reset dispatch has moved entirely to the `ResettableClass` phases mechanism (`enter`/`hold`/`exit`), which none of the existing `s32k3_*` peripherals use). **The established convention in this codebase is to skip the Resettable API entirely** and instead:
+
    - Write a plain `static void foo_reset(DeviceState *dev)` function that zeroes all registers/state.
    - Call it **once, manually, from the end of the device's `realize()` function** (`dc->realize = foo_realize`, and `foo_realize()` ends by calling `foo_reset(dev)`).
    - Do **not** attempt `dc->reset = foo_reset;` — this will not compile (`error: 'DeviceClass' has no member named 'reset'`).
    - **Known consequence/limitation:** because of this, a guest-triggered system reset (or QEMU's `system_reset` monitor command) will **NOT** re-initialize any of these peripheral models' register state. They only reset once, at machine construction time. If a future task requires real reset-button/watchdog-triggered peripheral reinitialization, this would need to be revisited by wiring up `ResettableClass` phases properly across all `s32k3_*` peripherals (a nontrivial cross-cutting change, not attempted in this project).
-
 3. **`class_init` signature takes `const void *data`**, not `void *data`:
+
    ```c
    static void foo_class_init(ObjectClass *klass, const void *data)
    ```
-   Using plain `void *data` produces `error: initialization of 'void (*)(ObjectClass *, const void *)' from incompatible pointer type` due to `-Werror`.
 
+   Using plain `void *data` produces `error: initialization of 'void (*)(ObjectClass *, const void *)' from incompatible pointer type` due to `-Werror`.
 4. **`Property` arrays must be declared `const`:**
+
    ```c
    static const Property foo_props[] = { DEFINE_PROP_UINT32(...), };
    ```
+
    (not `static Property foo_props[]`).
-
 5. The build uses `-Werror` with a large warning set — any of the above mismatches (or an unused variable, implicit fallthrough, etc.) will hard-fail the build, not just warn.
-
 6. Standard skeleton to copy from (best current example): `hw/timer/s32k3_emios.c` / `.h`. It demonstrates the full correct pattern: sysbus device with MMIO + IRQ, QOM properties, VMState, timer-based lazy/event-driven modeling, and the reset-called-from-realize convention.
 
 ## 6. Peripheral-by-peripheral summary
 
 All base addresses/bitfields below were cross-checked against the S32K3xx Reference Manual Rev. 12 unless marked otherwise. Every "UNVERIFIED PLACEHOLDER" IRQ note below is copy-pasted verbatim from the actual header comments in the repo — search for that exact phrase in `hw/arm/s32k389.h` to find every remaining gap in one grep.
 
-| # | Peripheral | Status | Base address(es) | Notes |
-|---|---|---|---|---|
-| 3 | LPSPI x6 | done (prior session) | 0x40358000, 0x4035C000, 0x40360000, 0x40364000, 0x404BC000, 0x404C0000 | IRQs 165-170, verified against interrupt map |
-| 4 | LPI2C x2 | done (prior session) | 0x40350000, 0x40354000 | IRQs 175/176, **UNVERIFIED PLACEHOLDER** |
-| 5 | SWT (watchdog) x4 | done (prior session) | 0x40270000, 0x4046C000, 0x40470000, 0x40070000 | IRQs 177-180, **UNVERIFIED PLACEHOLDER** |
-| 6 | CRC | done (prior session) | 0x40380000 | No interrupt (manual: "This module has no interrupts") |
-| 7 | ADC x3 (24ch, 12-bit) | done (prior session) | 0x400A0000, 0x400A4000, 0x400A8000 | IRQs 181-183, **UNVERIFIED PLACEHOLDER** |
-| 8 | eMIOS x3 (24ch timer) | done (prior session) | 0x40088000, 0x4008C000, 0x40090000 | IRQs 184-186, **UNVERIFIED PLACEHOLDER**. Modeled as lazy/on-demand counter (computes live CNT from elapsed `QEMU_CLOCK_VIRTUAL` time + one event timer per channel for the next match), not a real per-tick callback (avoids pegging host CPU at an assumed 80MHz rate). The 80MHz clock assumption itself is **flagged unverified** in the header — not cross-checked against a specific manual clock table. |
-| 9 | eDMA (32 channel) | done (prior session) | mgmt 0x4020C000, channel page 0x40210000 | IRQs 187-218 (one per channel), **UNVERIFIED PLACEHOLDER**. Real synchronous memory-to-memory transfers via `address_space_read/write(&address_space_memory, ...)`. Handles SSIZE==DSIZE precisely (real per-transfer-size stepped copy) and SSIZE!=DSIZE via a documented simplification (byte-by-byte copy of total count). |
-| 10 | Multi-core (4x CM7) | done (prior session) | — | See detailed note below. |
-| 11 | GMAC Ethernet x2 | done (prior session) | 0x40484000, 0x40488000 | IRQs 224 / 171 (reused from `s32k388.h`). Directly reuses QEMU's existing `hw/net/npcm_gmac.c` model (already compiled into this build for the sibling S32K388 board) — justified by manual Table 618 grouping S32K388/S32K389 in one column. |
-| 12 | QuadSPI | **done, verified this/prior session** | controller 0x404CC000, ARDB 0x68000000 | IRQ 219, **UNVERIFIED PLACEHOLDER**. LUT-sequence-engine model: 80 LUT registers (16 sequences x 5 regs x 2 instructions), IPCR[SEQID] triggers execution against a 16MB malloc'd `flash[]` array at SFAR offset. LUT writes rejected unless unlocked via LUTKEY (0x5AF05AF0) then LCKCR[UNLOCK]. AHB memory-mapped flash *aperture* is NOT modeled (only the IP-bus command path) since its exact base address wasn't confirmed in available excerpts. **Verified this session**: unlock LUT -> program WRITE sequence (opcode 8) -> push 4 words via TBDR -> trigger IPCR -> program READ sequence (opcode 7) -> trigger IPCR again -> read back RBDR0-3 via monitor `xp` and got an exact match of all 4 original words, proving the internal flash round-trip works. No guest errors. |
-| 13 | uSDHC | **deleted / not applicable** | — | Manual Table 809 ("uSDHC instances") explicitly lists S32K388 **and S32K389** in the "No" column for uSDHC support — this SoC variant genuinely does not have this peripheral on real silicon. User was asked and chose "skip uSDHC" over "implement anyway as non-standard extra." No files were created for this. If ever reversed, `hw/sd/sdhci.c` (QEMU's generic SDHCI model, already confirmed compiling into this build) was identified as the likely reuse candidate, analogous to the GMAC reuse pattern — reset value tables and register map are at manual chapter 81 (search `full.txt` for `Chapter 81` / `uSDHC memory map`, base address for chips that DO have it is `404E_4000h`). |
-| 14 | SAI (I2S audio) x2 | **done, verified this session** | SAI_0 0x4036C000, SAI_1 0x404DC000 | IRQs 220/221, **UNVERIFIED PLACEHOLDER**. See detailed note below. |
+| #  | Peripheral            | Status                                      | Base address(es)                                                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -- | --------------------- | ------------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 3  | LPSPI x6              | done (prior session)                        | 0x40358000, 0x4035C000, 0x40360000, 0x40364000, 0x404BC000, 0x404C0000 | IRQs 165-170, verified against interrupt map                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 4  | LPI2C x2              | done (prior session)                        | 0x40350000, 0x40354000                                                 | IRQs 175/176,**UNVERIFIED PLACEHOLDER**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 5  | SWT (watchdog) x4     | done (prior session)                        | 0x40270000, 0x4046C000, 0x40470000, 0x40070000                         | IRQs 177-180,**UNVERIFIED PLACEHOLDER**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 6  | CRC                   | done (prior session)                        | 0x40380000                                                             | No interrupt (manual: "This module has no interrupts")                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 7  | ADC x3 (24ch, 12-bit) | done (prior session)                        | 0x400A0000, 0x400A4000, 0x400A8000                                     | IRQs 181-183,**UNVERIFIED PLACEHOLDER**                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 8  | eMIOS x3 (24ch timer) | done (prior session)                        | 0x40088000, 0x4008C000, 0x40090000                                     | IRQs 184-186,**UNVERIFIED PLACEHOLDER**. Modeled as lazy/on-demand counter (computes live CNT from elapsed `QEMU_CLOCK_VIRTUAL` time + one event timer per channel for the next match), not a real per-tick callback (avoids pegging host CPU at an assumed 80MHz rate). The 80MHz clock assumption itself is **flagged unverified** in the header — not cross-checked against a specific manual clock table.                                                                                                                                                                                                                                                                                                                                                                               |
+| 9  | eDMA (32 channel)     | done (prior session)                        | mgmt 0x4020C000, channel page 0x40210000                               | IRQs 187-218 (one per channel),**UNVERIFIED PLACEHOLDER**. Real synchronous memory-to-memory transfers via `address_space_read/write(&address_space_memory, ...)`. Handles SSIZE==DSIZE precisely (real per-transfer-size stepped copy) and SSIZE!=DSIZE via a documented simplification (byte-by-byte copy of total count).                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 10 | Multi-core (4x CM7)   | done (prior session)                        | —                                                                     | See detailed note below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| 11 | GMAC Ethernet x2      | done (prior session)                        | 0x40484000, 0x40488000                                                 | IRQs 224 / 171 (reused from`s32k388.h`). Directly reuses QEMU's existing `hw/net/npcm_gmac.c` model (already compiled into this build for the sibling S32K388 board) — justified by manual Table 618 grouping S32K388/S32K389 in one column.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| 12 | QuadSPI               | **done, verified this/prior session** | controller 0x404CC000, ARDB 0x68000000                                 | IRQ 219,**UNVERIFIED PLACEHOLDER**. LUT-sequence-engine model: 80 LUT registers (16 sequences x 5 regs x 2 instructions), IPCR[SEQID] triggers execution against a 16MB malloc'd `flash[]` array at SFAR offset. LUT writes rejected unless unlocked via LUTKEY (0x5AF05AF0) then LCKCR[UNLOCK]. AHB memory-mapped flash *aperture* is NOT modeled (only the IP-bus command path) since its exact base address wasn't confirmed in available excerpts. **Verified this session**: unlock LUT -> program WRITE sequence (opcode 8) -> push 4 words via TBDR -> trigger IPCR -> program READ sequence (opcode 7) -> trigger IPCR again -> read back RBDR0-3 via monitor `xp` and got an exact match of all 4 original words, proving the internal flash round-trip works. No guest errors. |
+| 13 | uSDHC                 | **deleted / not applicable**          | —                                                                     | Manual Table 809 ("uSDHC instances") explicitly lists S32K388**and S32K389** in the "No" column for uSDHC support — this SoC variant genuinely does not have this peripheral on real silicon. User was asked and chose "skip uSDHC" over "implement anyway as non-standard extra." No files were created for this. If ever reversed, `hw/sd/sdhci.c` (QEMU's generic SDHCI model, already confirmed compiling into this build) was identified as the likely reuse candidate, analogous to the GMAC reuse pattern — reset value tables and register map are at manual chapter 81 (search `full.txt` for `Chapter 81` / `uSDHC memory map`, base address for chips that DO have it is `404E_4000h`).                                                                                       |
+| 14 | SAI (I2S audio) x2    | **done, verified this session**       | SAI_0 0x4036C000, SAI_1 0x404DC000                                     | IRQs 220/221,**UNVERIFIED PLACEHOLDER**. See detailed note below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 
 ### 6.1 Multi-core detail (task #10)
 
 Real S32K389 has 4 physical Cortex-M7 cores in a lockstep/split-lock topology (manual §3.4/§3.5). A hardware lockstep checker core has no independently observable software behavior (it's a silent comparator), so there is nothing meaningful to emulate for "true lockstep." Instead:
+
 - All 4 physical cores are exposed as **independent, separately-programmable Cortex-M7 CPUs** (`s->armv7m` for core0, plus `s->core1/core2/core3`), each with a genuinely isolated private ITCM/DTCM.
 - Isolation mechanism: `memory_region_init_alias(core_mem, obj, name, system_memory, 0, UINT32_MAX)` creates a full aliased view of the shared bus, then `memory_region_add_subregion_overlap(core_mem, addr, itcm/dtcm, priority=1)` overlays that core's private RAM at the fixed local addresses (0x0 ITCM, 0x2000_0000 DTCM), masking the alias only at those ranges — everything else (flash, shared SRAM, peripherals) is visible identically across all cores.
 - `armv7m_load_kernel(cpu, kernel_filename, ...)` must be called once per CPU (it also registers that CPU's reset handler) — core0 gets the real kernel filename, cores 1-3 are called with `kernel_filename=NULL` (skips reloading flash, which is shared, but still registers the per-core reset handler).
@@ -200,10 +207,12 @@ Files: `hw/audio/s32k3_sai.h`, `hw/audio/s32k3_sai.c` (new this session).
 ## 7. Complete list of repo files touched (for re-syncing into a fresh `/tmp/qbuild` clone)
 
 **New files this session:**
+
 - `hw/audio/s32k3_sai.h`
 - `hw/audio/s32k3_sai.c`
 
 **New files, prior sessions (already existed before this handoff's work began, still relevant if re-syncing from scratch):**
+
 - `hw/ssi/s32k3_lpspi.h` / `.c`
 - `hw/i2c/s32k3_lpi2c.h` / `.c`
 - `hw/watchdog/s32k3_swt.h` / `.c`
@@ -217,6 +226,7 @@ Files: `hw/audio/s32k3_sai.h`, `hw/audio/s32k3_sai.c` (new this session).
 - `hw/net/s32k3_flexcan.h` (pre-existing FlexCAN, older work)
 
 **Modified files this session:**
+
 - `hw/audio/Kconfig` — added `config S32K3_SAI / bool`
 - `hw/audio/meson.build` — added `system_ss.add(when: 'CONFIG_S32K3_SAI', if_true: files('s32k3_sai.c'))`
 - `hw/arm/s32k389.h` — added `#include "hw/audio/s32k3_sai.h"`, the `S32K389_NUM_SAI`/`S32K3_SAI0_BASE`/`S32K3_SAI1_BASE`/`S32K3_SAI0_PARAM_RESET`/`S32K3_SAI1_PARAM_RESET`/`S32K3_SAI0_IRQ`/`S32K3_SAI1_IRQ` defines, and `DeviceState* sai[S32K389_NUM_SAI];` struct field
@@ -229,22 +239,22 @@ None of these changes have been committed to git (the repo is a plain working tr
 
 ## 8. Task list state at handoff
 
-| ID | Subject | Status |
-|---|---|---|
-| 1 | Compare QEMU S32K389 model vs real S32K389 | completed |
-| 2 | Write comparison docx | completed |
-| 3 | LPSPI functional model (6 instances) | completed |
-| 4 | LPI2C functional model (2 instances) | completed |
-| 5 | Software Watchdog (SWT) model | completed |
-| 6 | CRC peripheral model | completed |
-| 7 | ADC model (3x 24-channel 12-bit) | completed |
-| 8 | eMIOS timer/PWM model | completed |
-| 9 | eDMA controller model (32 channel) | completed |
-| 10 | Multi-core: add 3 extra Cortex-M7 cores + lockstep stub | completed |
-| 11 | Ethernet: GMAC x2 (1Gbps TSN) | completed |
-| 12 | QuadSPI controller (S32K388/389 variant) | completed |
-| 13 | uSDHC controller model | **deleted** (not applicable — see §6, real S32K389 has no uSDHC) |
-| 14 | SAI (I2S audio) model | completed |
+| ID | Subject                                                 | Status                                                                   |
+| -- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1  | Compare QEMU S32K389 model vs real S32K389              | completed                                                                |
+| 2  | Write comparison docx                                   | completed                                                                |
+| 3  | LPSPI functional model (6 instances)                    | completed                                                                |
+| 4  | LPI2C functional model (2 instances)                    | completed                                                                |
+| 5  | Software Watchdog (SWT) model                           | completed                                                                |
+| 6  | CRC peripheral model                                    | completed                                                                |
+| 7  | ADC model (3x 24-channel 12-bit)                        | completed                                                                |
+| 8  | eMIOS timer/PWM model                                   | completed                                                                |
+| 9  | eDMA controller model (32 channel)                      | completed                                                                |
+| 10 | Multi-core: add 3 extra Cortex-M7 cores + lockstep stub | completed                                                                |
+| 11 | Ethernet: GMAC x2 (1Gbps TSN)                           | completed                                                                |
+| 12 | QuadSPI controller (S32K388/389 variant)                | completed                                                                |
+| 13 | uSDHC controller model                                  | **deleted** (not applicable — see §6, real S32K389 has no uSDHC) |
+| 14 | SAI (I2S audio) model                                   | completed                                                                |
 
 **There is no pending/in-progress task.** All four originally-requested peripheral groups are fully addressed (uSDHC's absence is itself the correct, verified outcome, not an incomplete item).
 
@@ -296,9 +306,7 @@ Verification commands used:
 
 - Launch QEMU with TAP + auto-created tap0:
 
-  sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 \
-       ELF/s32k389/Eth_InternalLoopback_S32K389.elf
-
+  sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
 - Capture host-side packets from the TAP interface:
 
   sudo tcpdump -i tap0 -n -e
@@ -308,21 +316,21 @@ Verification commands used:
 Notes and recommendations / next steps:
 
 - If the firmware under test uses a strictly internal MAC-level loopback that never drives the PHY or netdev, host-side capture will still not show those frames. In that case either:
+
   - modify the firmware to send frames that traverse the netdev (disable true internal loopback), or
   - instrument the firmware (serial/console/logging) to report transmit/receive events, or
   - add a QEMU-side debug hook in the GMAC model to mirror loopback frames to a pcap sink (non-trivial change in `hw/net/npcm_gmac.c`).
-
 - If TAP creation is undesirable for security or policy reasons, prefer `--ethernet user` which uses QEMU user-mode networking and does not require host TAP setup.
-
 - The launcher now documents example monitor usage (TCP/unix sockets). If you want the helper script to itself start QEMU with a TCP monitor socket, that can be added as a small enhancement — currently the script uses `-serial mon:stdio` by default (interactive combined monitor and serial on stdio).
 
 This note and the `launch_qemu_389.sh` changes are intended to make reproducing packet captures easier for future testers and to reduce manual host setup steps.
 
-
 ## 12. Quick Launch Commands
+
 Below are ready-to-run commands for the Ethernet and CAN demos using the updated launcher, plus the host-side commands to observe traffic and to clean up interfaces when done.
 
 CAN demo — SocketCAN (vcan) visible on host
+
 - Launch QEMU using SocketCAN (auto-creates vcan0 if missing):
   sudo ./launch_qemu_389.sh --can socketcan --can-ifname vcan0 ELF/s32k389/FlexCAN_Ip_Example_S32K389.elf
 - On the host, observe CAN frames (requires can-utils):
@@ -334,11 +342,13 @@ CAN demo — SocketCAN (vcan) visible on host
   then run: sudo candump vcan0
 
 CAN demo — internal QEMU CAN bus (no host socket)
+
 - Launch with an internal QEMU CAN bus (no host SocketCAN):
   sudo ./launch_qemu_389.sh --can internal ELF/s32k389/FlexCAN_Ip_Example_S32K389.elf.elf
 - No host-side SocketCAN interface is present; inspect firmware output on serial/console (the script uses -serial mon:stdio).
 
 Helpful monitor / capture notes
+
 - Use tcpdump -i tap0 -n -e or Wireshark on the tap interface to see Ethernet frames.
 - If you see QEMU warnings like "nic … has no peer" or tcpdump says "That device is not up", bring up the interface manually:
   sudo ip link set tap0 up
@@ -347,6 +357,7 @@ Helpful monitor / capture notes
 - If the firmware uses an internal MAC loopback that never sends frames to the netdev, host-side capture will not show those frames. In that case, either disable internal loopback in firmware or inspect the guest-side logs/serial output.
 
 Cleanup (remove auto-created interfaces)
+
 - Remove TAP:
   sudo ip link delete tap0
 - Remove vcan:

@@ -7,6 +7,7 @@ firmware="${S32K389_WATCHDOG_ELF:-$repo_dir/ELF/s32k389/Eth_InternalLoopback_S32
 action="${1:-reset}"
 monitor_port="${MONITOR_PORT:-5555}"
 run_seconds="${RUN_SECONDS:-10}"
+poll_interval="${POLL_INTERVAL:-0.1}"
 log_file="${WATCHDOG_LOG:-$repo_dir/s32k389-watchdog-test.log}"
 
 if [[ "$action" != "reset" && "$action" != "pause" ]]; then
@@ -21,6 +22,16 @@ for tool in "$qemu_bin" "$firmware" nc timeout; do
     fi
 done
 command -v nc >/dev/null || { printf 'missing required command: nc\n' >&2; exit 1; }
+
+for source in \
+    "$repo_dir/hw/arm/s32k389.c" \
+    "$repo_dir/hw/watchdog/s32k3_swt.c"; do
+    if [[ -f "$source" && "$source" -nt "$qemu_bin" ]]; then
+        printf 'QEMU binary is older than %s; run: ninja -C build qemu-system-arm\n' \
+            "$source" >&2
+        exit 1
+    fi
+done
 
 if nc -z 127.0.0.1 "$monitor_port" >/dev/null 2>&1; then
     printf 'monitor port %s is already in use\n' "$monitor_port" >&2
@@ -57,10 +68,20 @@ if ! nc -z 127.0.0.1 "$monitor_port" >/dev/null 2>&1; then
     exit 1
 fi
 
-sleep "$run_seconds"
+deadline=$((SECONDS + run_seconds))
+while (( SECONDS < deadline )); do
+    if grep -q 's32k3_swt\[0\]: watchdog timeout' "$log_file"; then
+        break
+    fi
+    if ! kill -0 "$qemu_pid" 2>/dev/null; then
+        printf 'QEMU exited before watchdog timeout; see %s\n' "$log_file" >&2
+        exit 1
+    fi
+    sleep "$poll_interval"
+done
 
 status="$(printf 'info status\n' |
-    timeout 3 nc 127.0.0.1 "$monitor_port" 2>/dev/null |
+    timeout 5 nc 127.0.0.1 "$monitor_port" 2>/dev/null |
     tr -d '\000' || true)"
 printf '%s\n' "$status"
 
