@@ -6,6 +6,8 @@
 
 **Current status (2026-08-07):** the S32K389 machine model is built and available in the current workspace; a local `make -j4 qemu-system-arm` run completed successfully. The most recent functional addition was the SAI peripheral model, which was implemented, wired into the board, and documented here along with its verification notes and known limitations.
 
+**Ethernet/CAN implementation note:** the board-level wiring for the two GMAC controllers and twelve FlexCAN controllers is present and the MMIO/IRQ map is in place, but a realistic production-grade peripheral model still requires deterministic network addressing, pluggable host connectivity, and explicit validation of message-level CAN traffic. The S32K389 board code now assigns stable per-instance GMAC MAC addresses so each Ethernet interface is uniquely identifiable before user-supplied netdev configuration is applied.
+
 **Changes made in this pass:** added the SAI device model and board integration (`hw/audio/s32k3_sai.c` / `.h`), exposed the new peripheral through the S32K389 board headers and initialization path, updated the audio build configuration (`hw/audio/Kconfig` and `hw/audio/meson.build`), and added the new wiring in `hw/arm/s32k389.c` / `.h` and `hw/arm/Kconfig`. This document now captures the current build outcome, the implemented peripheral set, and the remaining verification gaps for future work.
 
 ### Why it was failing and how it was fixed

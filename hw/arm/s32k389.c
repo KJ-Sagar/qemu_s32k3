@@ -628,15 +628,30 @@ static void s32k389_init_gmac(S32K389State *s, MachineState *machine)
         S32K389_GMAC0_IRQ,
         S32K389_GMAC1_IRQ,
     };
+    static const uint8_t gmac_prefix[3] = { 0x00, 0x1b, 0x4f };
     char name[16];
 
     qemu_log_mask(CPU_LOG_INT, "Initializing GMAC Ethernet instances\n");
 
     for (int i = 0; i < S32K389_GMAC_COUNT; i++) {
+        uint8_t mac[6] = {
+            gmac_prefix[0],
+            gmac_prefix[1],
+            gmac_prefix[2],
+            (uint8_t)(0x80 + i),
+            0x00,
+            0x00,
+        };
+
         snprintf(name, sizeof(name), "gmac%d", i);
         object_initialize_child(OBJECT(machine), name, &s->gmac[i],
                                 TYPE_NPCM_GMAC);
 
+        /* Use a stable per-instance MAC so each Ethernet controller is unique
+         * even when the user does not pass an explicit netdev config. This is
+         * the minimum requirement for a realistic guest-to-host traffic setup.
+         */
+        qdev_prop_set_macaddr(DEVICE(&s->gmac[i]), "mac", mac);
         qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, NULL);
         sysbus_realize(SYS_BUS_DEVICE(&s->gmac[i]), &error_fatal);
         sysbus_mmio_map(SYS_BUS_DEVICE(&s->gmac[i]), 0, gmac_bases[i]);
