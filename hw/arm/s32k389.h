@@ -156,12 +156,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 #define S32K3_SWT2_BASE 0x40470000
 #define S32K3_SWT3_BASE 0x40070000
 // SWT Interrupts
-// UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
-// caveat applies (interrupt map spreadsheet not available).
-#define S32K3_SWT0_IRQ 177
-#define S32K3_SWT1_IRQ 178
-#define S32K3_SWT2_IRQ 179
-#define S32K3_SWT3_IRQ 180
+// Verified against S32K3xx_interrupt_map.xlsx (Interrupts sheet, S32K389
+// column): Watchdog 0/1/2/3 are IRQ 42/43/44/58 respectively.
+#define S32K3_SWT0_IRQ 42
+#define S32K3_SWT1_IRQ 43
+#define S32K3_SWT2_IRQ 44
+#define S32K3_SWT3_IRQ 58
 
 // CRC
 // Single instance, no interrupt (manual 58.3.6: "This module has no
@@ -284,16 +284,15 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 // PARAM reset values also verified there: SAI_0 has 4 data lines wired in
 // its register map (0004_0304h), SAI_1 has 1 (0004_0301h) - see
 // s32k3_sai.h scope note (only 1 channel is actually used per Table 547).
-// The S32K3xx_interrupt_map.xlsx sheet does not contain an SAI IRQ row for the
-// S32K389 column, so the IRQ values below remain model placeholders rather than
-// spreadsheet-validated numbers.
+// IRQs verified against S32K3xx_interrupt_map.xlsx: SAI 0/1 RX interrupts are
+// IRQ 174 and 175 respectively in the S32K389 column.
 #define S32K389_NUM_SAI 2
 #define S32K3_SAI0_BASE 0x4036C000
 #define S32K3_SAI1_BASE 0x404DC000
 #define S32K3_SAI0_PARAM_RESET 0x00040304
 #define S32K3_SAI1_PARAM_RESET 0x00040301
-#define S32K3_SAI0_IRQ 220
-#define S32K3_SAI1_IRQ 221
+#define S32K3_SAI0_IRQ 174
+#define S32K3_SAI1_IRQ 175
 
 // FlexCAN
 // Per S32K3xx_memory_map.xlsx (Peripherals sheet): S32K389 populates FlexCAN
