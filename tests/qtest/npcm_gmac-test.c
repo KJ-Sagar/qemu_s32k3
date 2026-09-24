@@ -317,6 +317,20 @@ static void test_init(gconstpointer test_data)
     qtest_quit(qts);
 }
 
+static void test_ptp_registers(gconstpointer test_data)
+{
+    const TestData *td = test_data;
+    const GMACModule *mod = td->module;
+    QTestState *qts = qtest_init("-machine npcm845-evb");
+
+    qtest_writel(qts, mod->base_addr + NPCM_GMAC_PTP_TCR, 0x1234);
+    g_assert_cmphex(qtest_readl(qts, mod->base_addr + NPCM_GMAC_PTP_TCR), ==, 0x1234);
+    g_assert_cmphex(qtest_readl(qts, mod->base_addr + NPCM_GMAC_PTP_STSR), !=, 0);
+    g_assert_cmphex(qtest_readl(qts, mod->base_addr + NPCM_GMAC_PTP_STNSR), !=, 0);
+
+    qtest_quit(qts);
+}
+
 static void gmac_add_test(const char *name, const TestData* td,
                           GTestDataFunc fn)
 {
@@ -337,6 +351,7 @@ int main(int argc, char **argv)
         td->module = &gmac_module_list[i];
 
         gmac_add_test("init", td, test_init);
+        gmac_add_test("ptp-registers", td, test_ptp_registers);
     }
 
     return g_test_run();

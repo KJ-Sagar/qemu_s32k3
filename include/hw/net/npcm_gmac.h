@@ -166,6 +166,7 @@ typedef struct NPCMGMACState {
 
     uint32_t regs[NPCM_GMAC_NR_REGS];
     uint16_t phy_regs[NPCM_GMAC_MAX_PHYS][NPCM_GMAC_MAX_PHY_REGS];
+    int64_t ptp_time_offset_ns;
 } NPCMGMACState;
 
 #define TYPE_NPCM_GMAC "npcm-gmac"
@@ -317,6 +318,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(NPCMGMACState, NPCM_GMAC)
 #define NPCM_GMAC_MAC_CONFIG_RX_EN BIT(2)
 /* Transmit enable */
 #define NPCM_GMAC_MAC_CONFIG_TX_EN BIT(3)
+/* Internal MAC loopback */
+#define NPCM_GMAC_MAC_CONFIG_LOOPBACK BIT(14)
 
 /* Frame Receive All */
 #define NPCM_GMAC_FRAME_FILTER_REC_ALL_MASK BIT(31)
