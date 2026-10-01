@@ -175,10 +175,35 @@ def validate_base_macros(macros: dict[str, int], base_lookup: dict[str, int]) ->
         "S32K3_ADC0_BASE": "adc 0",
         "S32K3_ADC1_BASE": "adc 1",
         "S32K3_ADC2_BASE": "adc 2",
+<<<<<<< HEAD
         **{
             f"S32K3_FLEXCAN{i}_BASE": f"flexcan {i}"
             for i in range(12)
         },
+=======
+        "S32K3_FLEXCAN0_BASE": "flexcan 0",
+        "S32K3_FLEXCAN1_BASE": "flexcan 1",
+        "S32K3_FLEXCAN2_BASE": "flexcan 2",
+        "S32K3_FLEXCAN3_BASE": "flexcan 3",
+        "S32K3_FLEXCAN4_BASE": "flexcan 4",
+        "S32K3_FLEXCAN5_BASE": "flexcan 5",
+        "S32K3_FLEXCAN6_BASE": "flexcan 6",
+        "S32K3_FLEXCAN7_BASE": "flexcan 7",
+        "S32K3_FLEXCAN8_BASE": "flexcan 8",
+        "S32K3_FLEXCAN9_BASE": "flexcan 9",
+        "S32K3_FLEXCAN10_BASE": "flexcan 10",
+        "S32K3_FLEXCAN11_BASE": "flexcan 11",
+        "S32K3_LPI2C0_BASE": "lpi2c 0",
+        "S32K3_LPI2C1_BASE": "lpi2c 1",
+        "S32K3_LPSPI0_BASE": "lpspi 0",
+        "S32K3_LPSPI1_BASE": "lpspi 1",
+        "S32K3_LPSPI2_BASE": "lpspi 2",
+        "S32K3_LPSPI3_BASE": "lpspi 3",
+        "S32K3_LPSPI4_BASE": "lpspi 4",
+        "S32K3_LPSPI5_BASE": "lpspi 5",
+        "S32K3_EDMA_MGMT_BASE": "edma",
+        "S32K3_EDMA_CH_BASE": "edma tcd 0",
+>>>>>>> bf1ff38d14763391fc50f0e4a9625b32fa80c2ff
         "S32K3_EMIOS0_BASE": "emios0",
         "S32K3_EMIOS1_BASE": "emios1",
         "S32K3_EMIOS2_BASE": "emios2",

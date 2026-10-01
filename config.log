@@ -1,0 +1,10 @@
+# QEMU configure log Thu 01 Oct 2026 01:39:50 PM IST
+# Configured with: '/home/kj/QEMU/qemu_s32k3/configure' '--help'
+
+#
+cc -c -o config-temp/qemu-conf.o config-temp/qemu-conf.c
+cc -c -o config-temp/qemu-conf.o config-temp/qemu-conf.c
+cc -c -o config-temp/qemu-conf.o config-temp/qemu-conf.c
+config-temp/qemu-conf.c:2:2: error: #error __ILP32__ not defined
+    2 | #error __ILP32__ not defined
+      |  ^~~~~
