@@ -163,6 +163,7 @@ typedef struct NPCMGMACState {
 
     NICState *nic;
     NICConf conf;
+    bool s32k3_mode;
 
     uint32_t regs[NPCM_GMAC_NR_REGS];
     uint16_t phy_regs[NPCM_GMAC_MAX_PHYS][NPCM_GMAC_MAX_PHY_REGS];
