@@ -49,10 +49,12 @@ This is the single most error-prone part of working in this environment. Get it 
 
 - The user's actual project folder (`C:\QEMU\qemu_s32k344`, seen from the bash sandbox as `/sessions/<session>/mnt/qemu_s32k344`) has **CRLF line endings** on every file (Windows checkout). QEMU's meson/ninja/configure scripts do not tolerate CRLF and will fail or behave strangely if built in place.
 - The working build copy is a clean Linux clone kept at **`/tmp/qbuild`**, created via:
+
   ```
   git clone --local --no-hardlinks /sessions/<session>/mnt/qemu_s32k344 /tmp/qbuild
   ```
 - **Critical gotcha:** `git clone` only replicates *committed* git content. Every peripheral file in this project was authored via the Write/Edit tools directly against the real project folder and was **never committed** — so a fresh clone of `/tmp/qbuild` will be missing all of it. After any clone (fresh or re-created), you must manually re-sync every touched/new file:
+
   ```bash
   SRC=/sessions/<session>/mnt/qemu_s32k344
   DST=/tmp/qbuild
@@ -365,7 +367,7 @@ Cleanup (remove auto-created interfaces)
 
 Ethernet demo - TAP
 TAP test:
-sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
+sudo scripts/./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
 
 In another terminal confirm the TAP is up and watch traffic:
 sudo ip addr show dev tap0
