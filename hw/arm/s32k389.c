@@ -648,15 +648,21 @@ static void s32k389_init_gmac(S32K389State *s, MachineState *machine)
                                 TYPE_NPCM_GMAC);
 
 <<<<<<< HEAD
+<<<<<<< HEAD
         object_property_set_bool(OBJECT(&s->gmac[i]), "s32k3-mode", true,
                                  &error_fatal);
 =======
+=======
+>>>>>>> b467ea4856b3b66f8f67574104e78651c9b1330d
         /* Use a stable per-instance MAC so each Ethernet controller is unique
          * even when the user does not pass an explicit netdev config. This is
          * the minimum requirement for a realistic guest-to-host traffic setup.
          */
         qdev_prop_set_macaddr(DEVICE(&s->gmac[i]), "mac", mac);
+<<<<<<< HEAD
 >>>>>>> agents/verify-s32k389-specifications
+=======
+>>>>>>> b467ea4856b3b66f8f67574104e78651c9b1330d
         qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, NULL);
         sysbus_realize(SYS_BUS_DEVICE(&s->gmac[i]), &error_fatal);
         sysbus_mmio_map(SYS_BUS_DEVICE(&s->gmac[i]), 0, gmac_bases[i]);

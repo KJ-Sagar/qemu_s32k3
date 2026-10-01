@@ -157,12 +157,17 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 #define S32K3_SWT3_BASE 0x40070000
 // SWT Interrupts
 <<<<<<< HEAD
+<<<<<<< HEAD
 // UNVERIFIED PLACEHOLDER - see the S32K3_LPI2Cn_IRQ comment above; same
 // caveat applies (interrupt map spreadsheet not available).
 =======
 // Verified against S32K3xx_interrupt_map.xlsx (Interrupts sheet, S32K389
 // column): Watchdog 0/1/2/3 are IRQ 42/43/44/58 respectively.
 >>>>>>> agents/verify-s32k389-specifications
+=======
+// Verified against S32K3xx_interrupt_map.xlsx (Interrupts sheet, S32K389
+// column): Watchdog 0/1/2/3 are IRQ 42/43/44/58 respectively.
+>>>>>>> b467ea4856b3b66f8f67574104e78651c9b1330d
 #define S32K3_SWT0_IRQ 42
 #define S32K3_SWT1_IRQ 43
 #define S32K3_SWT2_IRQ 44
