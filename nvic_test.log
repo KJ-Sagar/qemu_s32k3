@@ -1,0 +1,13 @@
+nvic_set_irq_level NVIC external irq 180 level set to 0
+nvic_set_irq_level NVIC external irq 120 level set to 0
+nvic_set_irq_level NVIC external irq 91 level set to 0
+nvic_set_irq_level NVIC external irq 76 level set to 0
+nvic_set_irq_level NVIC external irq 144 level set to 0
+nvic_set_irq_level NVIC external irq 142 level set to 0
+nvic_set_irq_level NVIC external irq 140 level set to 0
+nvic_set_irq_level NVIC external irq 138 level set to 0
+nvic_set_irq_level NVIC external irq 136 level set to 0
+nvic_set_irq_level NVIC external irq 133 level set to 0
+nvic_set_irq_level NVIC external irq 130 level set to 0
+nvic_set_irq_level NVIC external irq 126 level set to 0
+nvic_set_irq_level NVIC external irq 155 level set to 0

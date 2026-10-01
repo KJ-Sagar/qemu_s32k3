@@ -301,6 +301,12 @@ static uint64_t s32k3_edma_ch_read(void *opaque, hwaddr addr, unsigned size)
     case S32K3_EDMA_TCD_BITER:
         return c->biter & 0xFFFF;
     default:
+        /* The channel window reserves 0x14-0x1f between PRI and TCD.
+         * Silicon ignores accesses to this space; Ethernet startup code
+         * clears it as part of its generic eDMA-channel initialization. */
+        if (sub >= 0x14 && sub < S32K3_EDMA_TCD_SADDR) {
+            return 0;
+        }
         qemu_log_mask(LOG_GUEST_ERROR,
                       "s32k3_edma: channel %d read from invalid sub-offset "
                       "0x%x\n", idx, sub);
@@ -405,6 +411,10 @@ static void s32k3_edma_ch_write(void *opaque, hwaddr addr, uint64_t val64,
         c->biter = val & 0xFFFF;
         break;
     default:
+        /* Reserved channel space is write-ignored by the hardware. */
+        if (sub >= 0x14 && sub < S32K3_EDMA_TCD_SADDR) {
+            break;
+        }
         qemu_log_mask(LOG_GUEST_ERROR,
                       "s32k3_edma: channel %d write to invalid sub-offset "
                       "0x%x (value 0x%" PRIx32 ")\n", idx, sub, val);
