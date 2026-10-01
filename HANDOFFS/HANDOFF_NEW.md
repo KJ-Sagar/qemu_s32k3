@@ -28,15 +28,24 @@ from this worktree or use its absolute path. Running
 `build/qemu-system-arm`, which may contain older code and can reproduce the
 PTP/eDMA warnings.
 
-Current worktree modifications:
+Changes relevant to the current Ethernet task:
 
 ```text
-hw/dma/s32k3_edma.c
+hw/arm/s32k389.c
 hw/net/npcm_gmac.c
 include/hw/net/npcm_gmac.h
-tests/qtest/npcm_gmac-test.c
-HANDOFFS/HANDOFF.md
+tests/qtest/s32k389-gmac-test.c
+tests/qtest/meson.build
+HANDOFFS/HANDOFF_NEW.md
 ```
+
+There are other pre-existing changes in this worktree. Check `git status`
+before editing or cleaning files, and preserve unrelated work.
+
+The detailed Ethernet driver audit is at
+[`docs/s32k389-ethernet-driver-audit.md`](./docs/s32k389-ethernet-driver-audit.md).
+Ethernet driver-level EQOS work is in progress as of 1 October 2026; see
+Section 5 for the implementation and validation state.
 
 The QEMU binary built for the active worktree is:
 
@@ -99,7 +108,7 @@ Source:
 
 - [s32k3_swt.c](../hw/watchdog/s32k3_swt.c)
 - [s32k3_swt.h](../hw/watchdog/s32k3_swt.h)
-- [s32k389-watchdog-testing.md](../docs/s32k389-watchdog-testing.md)
+- [s32k389-watchdog-testing.md](./docs/s32k389-watchdog-testing.md)
 - [s32k389-watchdog-test.sh](../scripts/s32k389-watchdog-test.sh)
 
 ### 3.1 Instances and addresses
@@ -378,10 +387,42 @@ Legacy DMA path:
 EQOS-style TX path:
 
 - Descriptor-list/tail-pointer traversal.
-- FD/LD and frame-length handling.
-- Buffer DMA reads.
-- OWN-bit clearing.
-- IOC/TX interrupt handling.
+- S32K3 descriptor stride derived from DMA DSL and 64-bit buffer addresses.
+- Buffer DMA reads, packet assembly across descriptors, and checksum insertion
+  control.
+- Frame-length consistency checking, OWN-bit clearing, and IOC/TX interrupt
+  handling through EQOS DMA status.
+
+S32K3 EQOS-style RX path:
+
+- The S32K389 GMAC instances enable a device property that selects S32K3
+  register behavior without changing the NPCM register model defaults.
+- RX availability is gated by MAC `RE` and channel-0 RX `SR`; queue flushing
+  occurs when RX starts or the tail pointer advances.
+- Channel-0 descriptor ring length, DMA DSL, ring base/current/tail pointers,
+  RX buffer size, descriptor ownership, BUF1/BUF2 validity, and 64-bit BUF1
+  addressing are used by the DMA path.
+- Address filtering uses EQOS packet-filter and MAC Address 0–2 registers.
+  Multicast hash indexing uses the manual's bit-reversed CRC selection.
+- QEMU backend packets are extended with an Ethernet FCS before DMA. RX
+  descriptor packet length therefore includes the four FCS bytes as stated by
+  the reference manual.
+- Completion writes FD/LD/packet length, returns descriptor ownership, updates
+  the current descriptor and RI/RBU/FBE status, and recalculates NIS/AIS and
+  the device IRQ. DMA status is W1C.
+- A socket-backed S32K389 qtest is registered for EQOS RX filtering, payload,
+  FCS, completion, and W1C/IRQ-summary status, plus EQOS TX buffer output,
+  descriptor ownership, and TX status.
+
+The socket-backed qtests have been built and passed in a separate clean
+validation worktree. They verify rejected-frame filtering without blocking the
+network queue, RX payload/FCS and descriptor writeback, two-entry RX ring
+advancement and re-arming after wrap, W1C interrupt status, single-buffer TX,
+TX descriptor advancement/ownership return, and TX interrupt status.
+
+These paths are still an incremental driver-level implementation, not a
+complete EQOS model. The qtests do not yet exercise the supplied firmware's
+real descriptor ring over TAP or all advanced MAC/PHY features.
 
 ### 5.3 Filtering and loopback additions
 
@@ -429,11 +470,14 @@ PTP is only basic counter support:
 
 Other remaining limitations:
 
-- Exact vendor-specific PCF/inverse-filter semantics are not complete.
+- Control-frame filtering and source-address filtering are not complete.
 - VLAN filtering and advanced TSN behavior are not complete.
-- Frame error/checksum semantics are simplified.
-- Descriptor behavior should be tested against the S32K389 driver, not only
-  the NPCM qtest.
+- RX split-header/advanced status fields, PHY/PCS behavior, and complete
+  checksum/error reporting are not complete.
+- TX currently supports the single-buffer normal descriptor use case used by
+  the qtest and assembles multi-descriptor packets; verify actual S32K389
+  descriptor layouts and any second-buffer usage against firmware.
+- Descriptor behavior still needs end-to-end testing with the S32K389 firmware.
 
 ### 5.5 Network launcher
 
@@ -529,6 +573,18 @@ Build:
 ```bash
 ninja -C build -j4 qemu-system-arm
 ```
+
+**Current checkout caveat:** `docs/meson.build` is absent from the active
+working checkout, so Ninja's Meson regeneration there fails before it can build
+or link QEMU. The documentation tree is intentionally left untouched. To
+validate the implementation, a detached clean worktree was created at
+`/tmp/qemu-s32k389-validation`, and only the Ethernet source/test changes were
+transferred there. Its ARM QEMU and qtest targets built successfully, and both
+`/arm/s32k389/gmac/eqos-rx` and `/arm/s32k389/gmac/eqos-tx` passed. The supplied
+Ethernet ELF also ran for the 15-second smoke-test interval on that binary
+without guest errors; the expected timeout terminated the continuously
+running firmware. That smoke run used `-nic none`, so it is not a TAP
+end-to-end firmware test.
 
 Fast source checks:
 
