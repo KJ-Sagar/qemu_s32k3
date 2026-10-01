@@ -420,9 +420,36 @@ network queue, RX payload/FCS and descriptor writeback, two-entry RX ring
 advancement and re-arming after wrap, W1C interrupt status, single-buffer TX,
 TX descriptor advancement/ownership return, and TX interrupt status.
 
+An additional manual test on 1 October 2026 exercised the supplied
+`Eth_InternalLoopback_S32K389.elf` with GMAC0 attached to `tap0`. A crafted
+60-byte Ethernet frame addressed to `66:55:44:33:22:11` was injected through
+the host TAP device. QEMU completed the first RX descriptor, then completed
+the second after another injection:
+
+| Observation | First capture | Second capture |
+|---|---:|---:|
+| DMA channel status (`0x1160`) | `0x00000041` | `0x00000041` |
+| Current TX descriptor (`0x1144`) | `0x20501a20` | `0x20501a20` |
+| Current RX descriptor (`0x114c`) | `0x20501720` | `0x20501740` |
+| RX descriptor 0 RDES3 | `0x30000040` | `0x30000040` |
+| RX descriptor 1 RDES3 | `0xc1000000` | `0x30000040` |
+| Missed-frame counter (`0x1164`) | `1` | `1` |
+
+`RDES3=0x30000040` records FD, LD, and a 64-byte received packet length
+(60-byte Ethernet frame plus four-byte FCS), with OWN cleared. The RX current
+descriptor advancing by `0x20` confirms 32-byte descriptor spacing and that
+the S32K3 EQOS receive DMA consumed the host-injected frames. The single
+missed-frame count records a filtered frame; it did not prevent later frames
+from reaching descriptors. DMA interrupt enable (`0x1134`) was zero, so this
+run demonstrates status polling rather than guest IRQ delivery. The same
+capture shows the first TX descriptor complete and the crafted outgoing test
+frame on `tap0`.
+
 These paths are still an incremental driver-level implementation, not a
 complete EQOS model. The qtests do not yet exercise the supplied firmware's
-real descriptor ring over TAP or all advanced MAC/PHY features.
+real firmware's complete network stack or all advanced MAC/PHY features.
+Guest-buffer bytes were not included in the manual monitor capture, although
+payload/FCS contents are asserted by the socket-backed RX qtest.
 
 ### 5.3 Filtering and loopback additions
 
