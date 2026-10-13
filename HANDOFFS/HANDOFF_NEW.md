@@ -379,6 +379,16 @@ the RX output from enabled RX DMA status sources; the existing combined
 summary remains connected to the common line. Qtests assert GMAC0 common
 IRQ 224 and RX IRQ 226 on receive, TX IRQ 225 on transmit, and verify the
 direction-specific output deasserts after W1C.
+The GMAC1 qtest selects its NIC using the `gmac1` model alias, with no backend
+configured for GMAC0. It checks GMAC1 TX/RX datapath, descriptor completion,
+common IRQ 171, channel 0 TX IRQ 172, channel 0 RX IRQ 233, W1C deassertion,
+and that GMAC0 DMA status remains unchanged.
+
+The launcher accepts `--ethernet-gmac1 off|user|tap` and
+`--ethernet-gmac1-ifname <tap-name>` so GMAC1 can use an independent optional
+backend, even when GMAC0 is disabled. Its default is off, preserving the
+existing GMAC0-only launch behavior. For example, GMAC1 alone can use a TAP
+with `--ethernet off --ethernet-gmac1 tap --ethernet-gmac1-ifname tap1`.
 
 The supplied `Eth_InternalLoopback_S32K389` AUTOSAR example configures one TX
 and one RX ring with four descriptors each and 64-byte buffers. Its generated
@@ -440,7 +450,8 @@ writeback, 2-descriptor RX packet splitting and ring exhaustion, two-entry RX
 ring advancement and re-arming after wrap, GMAC0 common IRQ 224 and RX IRQ 226
 assertion, W1C deassertion, single- and multi-descriptor TX, TX descriptor
 advancement/ownership return, and TX IRQ 225 delivery. All three lines match
-the supplied S32K389 interrupt map.
+the supplied S32K389 interrupt map. The independent GMAC1 test also passes,
+covering TX/RX and IRQs 171/172/233.
 
 An additional manual test on 1 October 2026 exercised the supplied
 `Eth_InternalLoopback_S32K389.elf` with GMAC0 attached to `tap0`. A crafted
@@ -685,7 +696,7 @@ Priority order:
 2. Add a host-to-guest RX test; current tcpdump evidence primarily proves
    guest-to-host TX.
 3. Check remaining peripheral IRQ assignments against the supplied interrupt
-   map; exercise GMAC1's separately wired channel 0 IRQs in qtests.
+   map; add GMAC1 multi-descriptor and ring-exhaustion coverage.
 4. Decide and implement secondary-core peripheral IRQ routing.
 5. Add a second Ethernet backend option for GMAC1.
 6. Implement complete S32K389 PCS/RGMII and MII semantics if the firmware

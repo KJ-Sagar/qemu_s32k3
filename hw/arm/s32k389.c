@@ -647,7 +647,7 @@ static void s32k389_init_gmac(S32K389State *s, MachineState *machine)
 
         object_property_set_bool(OBJECT(&s->gmac[i]), "s32k3-mode", true,
                                  &error_fatal);
-        qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, NULL);
+        qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, name);
         sysbus_realize(SYS_BUS_DEVICE(&s->gmac[i]), &error_fatal);
         sysbus_mmio_map(SYS_BUS_DEVICE(&s->gmac[i]), 0, gmac_bases[i]);
         sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]), 0,

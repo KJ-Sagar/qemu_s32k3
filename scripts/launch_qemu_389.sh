@@ -20,6 +20,12 @@
 #  - TAP networking + SocketCAN (auto-create tap/vcan if missing):
 #      sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 \
 #           --can socketcan --can-ifname vcan0 <kernel.elf>
+#  - Enable a separate user-mode backend for GMAC1:
+#      sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 \
+#           --ethernet-gmac1 user <kernel.elf>
+#  - Attach GMAC1 to a second TAP interface:
+#      sudo ./launch_qemu_389.sh --ethernet tap --ethernet-gmac1 tap \
+#           --ethernet-ifname tap0 --ethernet-gmac1-ifname tap1 <kernel.elf>
 #  - CAN-only (internal QEMU CAN bus):
 #      sudo ./launch_qemu_389.sh --can internal <kernel.elf>
 #
@@ -39,10 +45,13 @@ DEBUG_PARAMS=""
 DEBUG_ARGS=()
 CAN_ARGS=()
 ETH_ARGS=()
+ETH1_ARGS=()
 CAN_MODE="auto"
 CAN_IFNAME="vcan0"
 ETH_BACKEND="off"
 ETH_IFNAME="tap0"
+ETH1_BACKEND="off"
+ETH1_IFNAME="tap1"
 
 usage() {
     cat <<EOF
@@ -51,6 +60,8 @@ Usage: $0 [options] <kernel-path> [debug-params]
 Options:
   --ethernet <backend>      Enable Ethernet backend. backend: off, user, tap
   --ethernet-ifname <name>  TAP interface name for Ethernet backend (default: tap0)
+  --ethernet-gmac1 <backend>      Enable GMAC1 backend. backend: off, user, tap
+  --ethernet-gmac1-ifname <name>  TAP interface for GMAC1 (default: tap1)
   --can <mode>              CAN backend. mode: off, auto, internal, socketcan
   --can-ifname <name>       SocketCAN interface name (default: vcan0)
   --help, -h                Show this help message
@@ -78,6 +89,24 @@ parse_args() {
                 ;;
             --ethernet-ifname=*)
                 ETH_IFNAME="${1#*=}"
+                shift
+                ;;
+            --ethernet-gmac1)
+                [ $# -ge 2 ] || { echo "Error: --ethernet-gmac1 requires a value" >&2; exit 1; }
+                ETH1_BACKEND="$2"
+                shift 2
+                ;;
+            --ethernet-gmac1=*)
+                ETH1_BACKEND="${1#*=}"
+                shift
+                ;;
+            --ethernet-gmac1-ifname)
+                [ $# -ge 2 ] || { echo "Error: --ethernet-gmac1-ifname requires a value" >&2; exit 1; }
+                ETH1_IFNAME="$2"
+                shift 2
+                ;;
+            --ethernet-gmac1-ifname=*)
+                ETH1_IFNAME="${1#*=}"
                 shift
                 ;;
             --can)
@@ -208,20 +237,22 @@ configure_can() {
 }
 
 ensure_tap_interface() {
+    local ifname="$1"
+
     if ! command -v ip >/dev/null 2>&1; then
         echo "Error: TAP networking was requested but the 'ip' command is not available" >&2
         exit 1
     fi
 
-    if ! ip link show "$ETH_IFNAME" >/dev/null 2>&1; then
-        if ! ip tuntap add dev "$ETH_IFNAME" mode tap; then
-            echo "Error: unable to create TAP interface $ETH_IFNAME" >&2
+    if ! ip link show "$ifname" >/dev/null 2>&1; then
+        if ! ip tuntap add dev "$ifname" mode tap; then
+            echo "Error: unable to create TAP interface $ifname" >&2
             exit 1
         fi
-        echo "Created TAP interface $ETH_IFNAME"
+        echo "Created TAP interface $ifname"
     fi
 
-    ip link set "$ETH_IFNAME" up >/dev/null 2>&1 || true
+    ip link set "$ifname" up >/dev/null 2>&1 || true
 }
 
 configure_ethernet() {
@@ -234,19 +265,48 @@ configure_ethernet() {
             echo "Using user-mode Ethernet networking"
             # legacy -nic convenience creates both netdev and nic config which
             # registers a NIC mapping that platform code can match
-            ETH_ARGS=( -nic "user,id=gmac0" )
+            ETH_ARGS=( -nic "user,model=gmac0,id=gmac0" )
             ;;
         tap)
             if [ -z "$ETH_IFNAME" ]; then
                 ETH_IFNAME="tap0"
             fi
-            ensure_tap_interface
+            ensure_tap_interface "$ETH_IFNAME"
             echo "Using TAP Ethernet backend '$ETH_IFNAME' (legacy -nic id=gmac0)"
             # Use -nic (legacy) so a NIC configuration entry is created with id=gmac0
-            ETH_ARGS=( -nic "tap,ifname=$ETH_IFNAME,id=gmac0,script=no,downscript=no" )
+            ETH_ARGS=(
+                -nic "tap,ifname=$ETH_IFNAME,model=gmac0,id=gmac0,script=no,downscript=no"
+            )
             ;;
         *)
             echo "Error: unsupported Ethernet backend '$ETH_BACKEND'" >&2
+            exit 1
+            ;;
+    esac
+}
+
+configure_gmac1_ethernet() {
+    case "$ETH1_BACKEND" in
+        off)
+            echo "GMAC1 Ethernet disabled"
+            ETH1_ARGS=()
+            ;;
+        user)
+            echo "Using user-mode Ethernet networking on GMAC1"
+            ETH1_ARGS=( -nic "user,model=gmac1,id=gmac1" )
+            ;;
+        tap)
+            if [ -z "$ETH1_IFNAME" ]; then
+                ETH1_IFNAME="tap1"
+            fi
+            ensure_tap_interface "$ETH1_IFNAME"
+            echo "Using TAP Ethernet backend '$ETH1_IFNAME' (legacy -nic id=gmac1)"
+            ETH1_ARGS=(
+                -nic "tap,ifname=$ETH1_IFNAME,model=gmac1,id=gmac1,script=no,downscript=no"
+            )
+            ;;
+        *)
+            echo "Error: unsupported GMAC1 Ethernet backend '$ETH1_BACKEND'" >&2
             exit 1
             ;;
     esac
@@ -267,7 +327,8 @@ else
 fi
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}" )" &> /dev/null && pwd )"
-QEMU_BIN="$SCRIPT_DIR/build/qemu-system-arm"
+REPO_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+QEMU_BIN="$REPO_DIR/build/qemu-system-arm"
 
 if [ -z "$KERNEL_PATH" ]; then
     usage
@@ -281,6 +342,7 @@ fi
 
 configure_can
 configure_ethernet
+configure_gmac1_ethernet
 
 # Launch selected QEMU
 exec "$QEMU_BIN" \
@@ -291,4 +353,5 @@ exec "$QEMU_BIN" \
   "${DEBUG_ARGS[@]}" \
   "${CAN_ARGS[@]}" \
   "${ETH_ARGS[@]}" \
+  "${ETH1_ARGS[@]}" \
   -d "$DEBUG_PARAMS"
