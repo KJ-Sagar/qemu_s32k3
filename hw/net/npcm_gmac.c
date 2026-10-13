@@ -273,6 +273,9 @@ static bool gmac_can_receive(NetClientState *nc)
  */
 static void gmac_update_irq(NPCMGMACState *gmac)
 {
+    int tx_level = 0;
+    int rx_level = 0;
+
     /*
      * Check if the normal interrupts summary is enabled
      * if so, add the bits for the summary that are enabled
@@ -298,6 +301,13 @@ static void gmac_update_irq(NPCMGMACState *gmac)
     if (gmac->s32k3_mode) {
         uint32_t status = gmac->regs[R_EQOS_DMA_CH0_STATUS];
         uint32_t enable = gmac->regs[R_EQOS_DMA_CH0_INTERRUPT_ENABLE];
+        uint32_t active = status & enable;
+        uint32_t tx_normal = EQOS_DMA_STATUS_TI | EQOS_DMA_STATUS_TBU;
+        uint32_t rx_normal = EQOS_DMA_STATUS_RI | EQOS_DMA_STATUS_ERI;
+        uint32_t tx_abnormal = EQOS_DMA_STATUS_TPS | EQOS_DMA_STATUS_ETI;
+        uint32_t rx_abnormal = EQOS_DMA_STATUS_RBU |
+                               EQOS_DMA_STATUS_RPS |
+                               EQOS_DMA_STATUS_RWT;
 
         status &= ~(EQOS_DMA_STATUS_NIS | EQOS_DMA_STATUS_AIS);
         if ((enable & EQOS_DMA_INT_NIE) &&
@@ -311,6 +321,14 @@ static void gmac_update_irq(NPCMGMACState *gmac)
         gmac->regs[R_EQOS_DMA_CH0_STATUS] = status;
         level |= !!(status & enable & (EQOS_DMA_STATUS_NIS |
                                        EQOS_DMA_STATUS_AIS));
+        tx_level = ((enable & EQOS_DMA_INT_NIE) &&
+                    (active & tx_normal)) ||
+                   ((enable & EQOS_DMA_INT_AIE) &&
+                    (active & tx_abnormal));
+        rx_level = ((enable & EQOS_DMA_INT_NIE) &&
+                    (active & rx_normal)) ||
+                   ((enable & EQOS_DMA_INT_AIE) &&
+                    (active & rx_abnormal));
     }
 
     /* Set the IRQ */
@@ -319,6 +337,8 @@ static void gmac_update_irq(NPCMGMACState *gmac)
                                gmac->regs[R_NPCM_DMA_INTR_ENA],
                                level);
     qemu_set_irq(gmac->irq, level);
+    qemu_set_irq(gmac->tx_irq, tx_level);
+    qemu_set_irq(gmac->rx_irq, rx_level);
 }
 
 static int gmac_read_rx_desc(dma_addr_t addr, struct NPCMGMACRxDesc *desc)
@@ -1781,6 +1801,7 @@ static void npcm_gmac_reset(DeviceState *dev)
 
     npcm_gmac_soft_reset(gmac);
     memcpy(gmac->phy_regs[0], phy_reg_init, sizeof(phy_reg_init));
+    gmac_update_irq(gmac);
 
     trace_npcm_gmac_reset(DEVICE(gmac)->canonical_path,
                           gmac->phy_regs[0][MII_BMSR]);
@@ -1815,6 +1836,8 @@ static void npcm_gmac_realize(DeviceState *dev, Error **errp)
                           TYPE_NPCM_GMAC, NPCM_GMAC_REG_SIZE);
     sysbus_init_mmio(sbd, &gmac->iomem);
     sysbus_init_irq(sbd, &gmac->irq);
+    sysbus_init_irq(sbd, &gmac->tx_irq);
+    sysbus_init_irq(sbd, &gmac->rx_irq);
 
     qemu_macaddr_default_if_unset(&gmac->conf.macaddr);
 

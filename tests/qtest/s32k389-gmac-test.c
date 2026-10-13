@@ -15,6 +15,9 @@
 #include <poll.h>
 
 #define GMAC0_BASE              0x40484000
+#define GMAC0_IRQ               224
+#define GMAC0_TX_IRQ            225
+#define GMAC0_RX_IRQ            226
 #define MAC_CONFIG              0x0000
 #define MAC_PACKET_FILTER       0x0008
 #define MAC_ADDR0_HI            0x0300
@@ -53,6 +56,7 @@
 #define TX_DESC_FD               BIT(29)
 #define TX_DESC_LD               BIT(28)
 #define DMA_STATUS_RI            BIT(6)
+#define DMA_STATUS_RBU           BIT(7)
 #define DMA_STATUS_TI            BIT(0)
 #define DMA_STATUS_NIS           BIT(15)
 #define DMA_INT_NIE              BIT(15)
@@ -148,6 +152,10 @@ static void test_eqos_rx(void)
     qts = qtest_initf("-machine s32k389 -nic socket,fd=%d",
                       sockets[1]);
     close(sockets[1]);
+    qtest_irq_intercept_in(qts, "/machine/armv7m");
+    g_assert_false(qtest_get_irq(qts, GMAC0_IRQ));
+    g_assert_false(qtest_get_irq(qts, GMAC0_TX_IRQ));
+    g_assert_false(qtest_get_irq(qts, GMAC0_RX_IRQ));
 
     qtest_memwrite(qts, RX_DESC_BASE, descriptor, sizeof(descriptor));
     qtest_memwrite(qts, RX_DESC_BASE + RX_DESC_STRIDE, descriptor2,
@@ -194,12 +202,17 @@ static void test_eqos_rx(void)
     g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_STATUS) &
                     (DMA_STATUS_RI | DMA_STATUS_NIS),
                     ==, DMA_STATUS_RI | DMA_STATUS_NIS);
+    g_assert_true(qtest_get_irq(qts, GMAC0_IRQ));
+    g_assert_false(qtest_get_irq(qts, GMAC0_TX_IRQ));
+    g_assert_true(qtest_get_irq(qts, GMAC0_RX_IRQ));
     g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_CURRENT_RX_DESC),
                     ==, RX_DESC_BASE + RX_DESC_STRIDE);
     qtest_writel(qts, GMAC0_BASE + DMA_CH0_STATUS,
                  DMA_STATUS_RI | DMA_STATUS_NIS);
     g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_STATUS) &
                     (DMA_STATUS_RI | DMA_STATUS_NIS), ==, 0);
+    g_assert_false(qtest_get_irq(qts, GMAC0_IRQ));
+    g_assert_false(qtest_get_irq(qts, GMAC0_RX_IRQ));
 
     send_frame(sockets[0], packet, sizeof(packet));
     g_assert_cmphex(wait_for_rx_completion(qts, RX_DESC_BASE +
@@ -230,6 +243,82 @@ static void test_eqos_rx(void)
                     ((const uint8_t[]){ 0xe1, 0xa6, 0x4a, 0xaf }), 4);
     g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_CURRENT_RX_DESC),
                     ==, RX_DESC_BASE + RX_DESC_STRIDE);
+
+    qtest_quit(qts);
+    close(sockets[0]);
+}
+
+static void test_eqos_rx_multidesc_and_ring_exhaustion(void)
+{
+    uint8_t packet[60] = {
+        0x66, 0x55, 0x44, 0x33, 0x22, 0x11,
+    };
+    uint32_t descriptor[2][4] = {
+        {
+            cpu_to_le32(RX_BUFFER_BASE), 0, 0,
+            cpu_to_le32(RX_DESC_OWN | RX_DESC_IOC | RX_DESC_BUF1V),
+        },
+        {
+            cpu_to_le32(RX_BUFFER2_BASE), 0, 0,
+            cpu_to_le32(RX_DESC_OWN | RX_DESC_IOC | RX_DESC_BUF1V),
+        },
+    };
+    uint8_t received[2][32] = { { 0 } };
+    int sockets[2];
+    QTestState *qts;
+
+    for (size_t i = 6; i < sizeof(packet); i++) {
+        packet[i] = i;
+    }
+
+    g_assert_cmpint(socketpair(PF_UNIX, SOCK_STREAM, 0, sockets), ==, 0);
+    qts = qtest_initf("-machine s32k389 -nic socket,fd=%d",
+                      sockets[1]);
+    close(sockets[1]);
+
+    qtest_memwrite(qts, RX_DESC_BASE, descriptor[0], sizeof(descriptor[0]));
+    qtest_memwrite(qts, RX_DESC_BASE + RX_DESC_STRIDE, descriptor[1],
+                   sizeof(descriptor[1]));
+    qtest_memwrite(qts, RX_BUFFER_BASE, received[0], sizeof(received[0]));
+    qtest_memwrite(qts, RX_BUFFER2_BASE, received[1], sizeof(received[1]));
+    qtest_writel(qts, GMAC0_BASE + MAC_CONFIG, BIT(0));
+    qtest_writel(qts, GMAC0_BASE + MAC_PACKET_FILTER, 0);
+    qtest_writel(qts, GMAC0_BASE + MAC_ADDR0_HI, 0x80001122);
+    qtest_writel(qts, GMAC0_BASE + MAC_ADDR0_LO, 0x33445566);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_CONTROL, 2 << 18);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_RX_DESC_LIST, RX_DESC_BASE);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_RX_CONTROL2, (32 << 17) | 1);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_RX_DESC_TAIL,
+                 RX_DESC_BASE + 2 * RX_DESC_STRIDE);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_INTERRUPT_ENA,
+                 DMA_STATUS_RI | DMA_INT_NIE);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_RX_CONTROL, 0x80081);
+
+    send_frame(sockets[0], packet, sizeof(packet));
+    g_assert_cmphex(wait_for_rx_completion(qts, RX_DESC_BASE +
+                                           RX_DESC_STRIDE), ==,
+                    RX_DESC_LD | (sizeof(packet) + 4));
+    g_assert_cmphex(qtest_readl(qts, RX_DESC_BASE + 12), ==, RX_DESC_FD);
+    qtest_memread(qts, RX_BUFFER_BASE, received[0], sizeof(received[0]));
+    qtest_memread(qts, RX_BUFFER2_BASE, received[1], sizeof(received[1]));
+    g_assert_cmpmem(received[0], sizeof(received[0]), packet,
+                    sizeof(received[0]));
+    g_assert_cmpmem(received[1], 28, packet + 32, 28);
+    g_assert_cmpmem(received[1] + 28, 4,
+                    ((const uint8_t[]){ 0xb3, 0xf8, 0x8a, 0xf1 }), 4);
+    g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_CURRENT_RX_DESC),
+                    ==, RX_DESC_BASE + 2 * RX_DESC_STRIDE);
+
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_STATUS, DMA_STATUS_RI);
+    send_frame(sockets[0], packet, sizeof(packet));
+    for (int i = 0; i < 10; i++) {
+        qtest_clock_step(qts, 1000000);
+    }
+    g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_STATUS) &
+                    DMA_STATUS_RBU, ==, DMA_STATUS_RBU);
+    g_assert_cmphex(qtest_readl(qts, RX_DESC_BASE + 12), ==, RX_DESC_FD);
+    g_assert_cmphex(qtest_readl(qts, RX_DESC_BASE + RX_DESC_STRIDE + 12),
+                    ==, RX_DESC_LD | (sizeof(packet) + 4));
 
     qtest_quit(qts);
     close(sockets[0]);
@@ -268,6 +357,9 @@ static void test_eqos_tx(void)
     qts = qtest_initf("-machine s32k389 -nic socket,fd=%d",
                       sockets[1]);
     close(sockets[1]);
+    qtest_irq_intercept_in(qts, "/machine/armv7m");
+    g_assert_false(qtest_get_irq(qts, GMAC0_TX_IRQ));
+    g_assert_false(qtest_get_irq(qts, GMAC0_RX_IRQ));
 
     qtest_memwrite(qts, TX_DESC_BASE, descriptor, sizeof(descriptor));
     qtest_memwrite(qts, TX_DESC_BASE + TX_DESC_STRIDE, descriptor2,
@@ -290,14 +382,77 @@ static void test_eqos_tx(void)
     g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_STATUS) &
                     (DMA_STATUS_TI | DMA_STATUS_NIS),
                     ==, DMA_STATUS_TI | DMA_STATUS_NIS);
+    g_assert_true(qtest_get_irq(qts, GMAC0_TX_IRQ));
+    g_assert_false(qtest_get_irq(qts, GMAC0_RX_IRQ));
     g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_CURRENT_TX_DESC),
                     ==, TX_DESC_BASE + TX_DESC_STRIDE);
     qtest_writel(qts, GMAC0_BASE + DMA_CH0_STATUS,
                  DMA_STATUS_TI | DMA_STATUS_NIS);
+    g_assert_false(qtest_get_irq(qts, GMAC0_TX_IRQ));
     qtest_writel(qts, GMAC0_BASE + DMA_CH0_TX_DESC_TAIL,
                  TX_DESC_BASE + 2 * TX_DESC_STRIDE);
     receive_frame(sockets[0], transmitted, sizeof(transmitted));
     g_assert_cmpmem(transmitted, sizeof(transmitted), packet, sizeof(packet));
+    g_assert_cmphex(qtest_readl(qts, TX_DESC_BASE + TX_DESC_STRIDE + 12) &
+                    TX_DESC_OWN, ==, 0);
+    g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_CURRENT_TX_DESC),
+                    ==, TX_DESC_BASE + 2 * TX_DESC_STRIDE);
+    g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_STATUS) &
+                    (DMA_STATUS_TI | DMA_STATUS_NIS),
+                    ==, DMA_STATUS_TI | DMA_STATUS_NIS);
+    g_assert_true(qtest_get_irq(qts, GMAC0_TX_IRQ));
+
+    qtest_quit(qts);
+    close(sockets[0]);
+}
+
+static void test_eqos_tx_multidesc(void)
+{
+    uint8_t packet[60] = {
+        0x66, 0x55, 0x44, 0x33, 0x22, 0x11,
+    };
+    uint32_t descriptor[2][4] = {
+        {
+            cpu_to_le32(TX_BUFFER_BASE), 0, cpu_to_le32(30),
+            cpu_to_le32(TX_DESC_OWN | TX_DESC_FD),
+        },
+        {
+            cpu_to_le32(TX_BUFFER2_BASE), 0,
+            cpu_to_le32(TX_DESC_IOC | 30),
+            cpu_to_le32(TX_DESC_OWN | TX_DESC_LD | sizeof(packet)),
+        },
+    };
+    uint8_t transmitted[sizeof(packet)] = { 0 };
+    int sockets[2];
+    QTestState *qts;
+
+    for (size_t i = 6; i < sizeof(packet); i++) {
+        packet[i] = i;
+    }
+
+    g_assert_cmpint(socketpair(PF_UNIX, SOCK_STREAM, 0, sockets), ==, 0);
+    qts = qtest_initf("-machine s32k389 -nic socket,fd=%d",
+                      sockets[1]);
+    close(sockets[1]);
+
+    qtest_memwrite(qts, TX_DESC_BASE, descriptor[0], sizeof(descriptor[0]));
+    qtest_memwrite(qts, TX_DESC_BASE + TX_DESC_STRIDE, descriptor[1],
+                   sizeof(descriptor[1]));
+    qtest_memwrite(qts, TX_BUFFER_BASE, packet, 30);
+    qtest_memwrite(qts, TX_BUFFER2_BASE, packet + 30, 30);
+    qtest_writel(qts, GMAC0_BASE + MAC_CONFIG, BIT(1));
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_CONTROL, 2 << 18);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_TX_DESC_LIST, TX_DESC_BASE);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_TX_RING_LENGTH, 1);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_INTERRUPT_ENA,
+                 DMA_STATUS_TI | DMA_INT_NIE);
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_TX_CONTROL, BIT(0));
+    qtest_writel(qts, GMAC0_BASE + DMA_CH0_TX_DESC_TAIL,
+                 TX_DESC_BASE + 2 * TX_DESC_STRIDE);
+
+    receive_frame(sockets[0], transmitted, sizeof(transmitted));
+    g_assert_cmpmem(transmitted, sizeof(transmitted), packet, sizeof(packet));
+    g_assert_cmphex(qtest_readl(qts, TX_DESC_BASE + 12) & TX_DESC_OWN, ==, 0);
     g_assert_cmphex(qtest_readl(qts, TX_DESC_BASE + TX_DESC_STRIDE + 12) &
                     TX_DESC_OWN, ==, 0);
     g_assert_cmphex(qtest_readl(qts, GMAC0_BASE + DMA_CH0_CURRENT_TX_DESC),
@@ -317,7 +472,11 @@ int main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
 #ifndef _WIN32
     qtest_add_func("s32k389/gmac/eqos-rx", test_eqos_rx);
+    qtest_add_func("s32k389/gmac/eqos-rx-multidesc",
+                   test_eqos_rx_multidesc_and_ring_exhaustion);
     qtest_add_func("s32k389/gmac/eqos-tx", test_eqos_tx);
+    qtest_add_func("s32k389/gmac/eqos-tx-multidesc",
+                   test_eqos_tx_multidesc);
 #endif
     return g_test_run();
 }

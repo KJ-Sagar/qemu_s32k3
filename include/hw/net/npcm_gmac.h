@@ -160,6 +160,8 @@ typedef struct NPCMGMACState {
 
     MemoryRegion iomem;
     qemu_irq irq;
+    qemu_irq tx_irq;
+    qemu_irq rx_irq;
 
     NICState *nic;
     NICConf conf;

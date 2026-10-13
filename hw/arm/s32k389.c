@@ -628,6 +628,14 @@ static void s32k389_init_gmac(S32K389State *s, MachineState *machine)
         S32K389_GMAC0_IRQ,
         S32K389_GMAC1_IRQ,
     };
+    static const int gmac_tx_irqs[S32K389_GMAC_COUNT] = {
+        S32K389_GMAC0_CH0_TX_IRQ,
+        S32K389_GMAC1_CH0_TX_IRQ,
+    };
+    static const int gmac_rx_irqs[S32K389_GMAC_COUNT] = {
+        S32K389_GMAC0_CH0_RX_IRQ,
+        S32K389_GMAC1_CH0_RX_IRQ,
+    };
     char name[16];
 
     qemu_log_mask(CPU_LOG_INT, "Initializing GMAC Ethernet instances\n");
@@ -645,6 +653,12 @@ static void s32k389_init_gmac(S32K389State *s, MachineState *machine)
         sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]), 0,
                            qdev_get_gpio_in(DEVICE(&s->armv7m),
                                             gmac_irqs[i]));
+        sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]), 1,
+                           qdev_get_gpio_in(DEVICE(&s->armv7m),
+                                            gmac_tx_irqs[i]));
+        sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]), 2,
+                           qdev_get_gpio_in(DEVICE(&s->armv7m),
+                                            gmac_rx_irqs[i]));
     }
 
     qemu_log_mask(CPU_LOG_INT, "GMAC Ethernet instances initialized\n");

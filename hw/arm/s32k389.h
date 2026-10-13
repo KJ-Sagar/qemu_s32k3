@@ -268,14 +268,19 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 // reused directly from the already-verified S32K388 model
 // (hw/arm/s32k388.h) on the strength of that grouping, rather than
 // independently re-derived from a S32K389-specific memory-map excerpt.
-// IRQ numbers carried over from the same source - same UNVERIFIED
-// PLACEHOLDER caveat as elsewhere in this file (no interrupt map
-// spreadsheet available).
+// IRQ assignments cross-checked against S32K3xx_interrupt_map.xlsx,
+// S32K389 column: GMAC0 common/Ch0 TX/Ch0 RX = 224/225/226;
+// GMAC1 common/Ch0 TX/Ch0 RX = 171/172/233. This board currently routes
+// common, channel 0 TX, and channel 0 RX outputs independently.
 #define S32K389_GMAC_COUNT 2
 #define S32K389_GMAC0_BASE 0x40484000
 #define S32K389_GMAC1_BASE 0x40488000
 #define S32K389_GMAC0_IRQ  224
 #define S32K389_GMAC1_IRQ  171
+#define S32K389_GMAC0_CH0_TX_IRQ 225
+#define S32K389_GMAC0_CH0_RX_IRQ 226
+#define S32K389_GMAC1_CH0_TX_IRQ 172
+#define S32K389_GMAC1_CH0_RX_IRQ 233
 
 // QuadSPI
 // Controller register base verified against manual section 80.13.2.1

@@ -123,8 +123,7 @@ S32K389 has one SWT per Cortex-M7 core:
 | SWT3 | `0x40070000` | `180` |
 
 The addresses are documented as verified against the S32K3xx reference
-manual. The IRQ values remain marked as unverified placeholders because the
-interrupt-map spreadsheet was not available when the board model was built.
+manual. SWT IRQ values still require checking against the interrupt map.
 
 ### 3.2 Register model
 
@@ -315,6 +314,7 @@ The following are source-documented or cross-checked more strongly:
 - FlexIO.
 - FlexCAN.
 - LPSPI.
+- GMAC common and channel 0 TX/RX interrupt assignments.
 
 The following IRQ values are still placeholders or rely on reuse from the
 S32K388 model and should be checked against the official S32K389 interrupt
@@ -325,7 +325,6 @@ map before claiming hardware-accurate routing:
 - ADC.
 - eMIOS.
 - eDMA.
-- GMAC.
 - QuadSPI.
 - SAI.
 
@@ -361,12 +360,32 @@ S32K389-specific TSN/PCS implementation.
 
 | Instance | Base | IRQ | QEMU ID |
 |---|---:|---:|---|
-| GMAC0 | `0x40484000` | `224` | `gmac0` |
-| GMAC1 | `0x40488000` | `171` | `gmac1` |
+| GMAC0 | `0x40484000` | common `224` | `gmac0` |
+| GMAC1 | `0x40488000` | common `171` | `gmac1` |
 
 The manual groups S32K388 and S32K389 as having two GMAC instances. Base/IRQ
-reuse from the S32K388 model is documented in `s32k389.h`; several IRQ values
-remain unverified.
+reuse from the S32K388 model is documented in `s32k389.h`. The supplied
+`S32K3xx_interrupt_map.xlsx`, S32K389 column, lists these additional GMAC
+channel interrupts:
+
+| Instance | Channel 0 TX IRQ | Channel 0 RX IRQ |
+|---|---:|---:|
+| GMAC0 | `225` | `226` |
+| GMAC1 | `172` | `233` |
+
+The board wires the common and channel 0 TX/RX lines separately. In S32K3
+mode, the model drives the TX output from enabled TX DMA status sources and
+the RX output from enabled RX DMA status sources; the existing combined
+summary remains connected to the common line. Qtests assert GMAC0 common
+IRQ 224 and RX IRQ 226 on receive, TX IRQ 225 on transmit, and verify the
+direction-specific output deasserts after W1C.
+
+The supplied `Eth_InternalLoopback_S32K389` AUTOSAR example configures one TX
+and one RX ring with four descriptors each and 64-byte buffers. Its generated
+GMAC ring and controller interrupt masks are zero, and `main.c` polls TX
+confirmation and RX statistics. The example uses internal loopback and checks
+a short self-addressed frame; it is a polling/datapath smoke test, not evidence
+for channel interrupt delivery or an external PHY/network stack.
 
 ### 5.2 Implemented datapaths
 
@@ -411,14 +430,17 @@ S32K3 EQOS-style RX path:
   the current descriptor and RI/RBU/FBE status, and recalculates NIS/AIS and
   the device IRQ. DMA status is W1C.
 - A socket-backed S32K389 qtest is registered for EQOS RX filtering, payload,
-  FCS, completion, and W1C/IRQ-summary status, plus EQOS TX buffer output,
+  FCS, multi-descriptor completion, ring exhaustion, NVIC IRQ assertion and
+  W1C deassertion, plus single- and multi-descriptor EQOS TX output,
   descriptor ownership, and TX status.
 
-The socket-backed qtests have been built and passed in a separate clean
-validation worktree. They verify rejected-frame filtering without blocking the
-network queue, RX payload/FCS and descriptor writeback, two-entry RX ring
-advancement and re-arming after wrap, W1C interrupt status, single-buffer TX,
-TX descriptor advancement/ownership return, and TX interrupt status.
+The socket-backed qtests have been built and passed. They verify rejected-frame
+filtering without blocking the network queue, RX payload/FCS and descriptor
+writeback, 2-descriptor RX packet splitting and ring exhaustion, two-entry RX
+ring advancement and re-arming after wrap, GMAC0 common IRQ 224 and RX IRQ 226
+assertion, W1C deassertion, single- and multi-descriptor TX, TX descriptor
+advancement/ownership return, and TX IRQ 225 delivery. All three lines match
+the supplied S32K389 interrupt map.
 
 An additional manual test on 1 October 2026 exercised the supplied
 `Eth_InternalLoopback_S32K389.elf` with GMAC0 attached to `tap0`. A crafted
@@ -603,15 +625,16 @@ ninja -C build -j4 qemu-system-arm
 
 **Current checkout caveat:** `docs/meson.build` is absent from the active
 working checkout, so Ninja's Meson regeneration there fails before it can build
-or link QEMU. The documentation tree is intentionally left untouched. To
-validate the implementation, a detached clean worktree was created at
-`/tmp/qemu-s32k389-validation`, and only the Ethernet source/test changes were
-transferred there. Its ARM QEMU and qtest targets built successfully, and both
-`/arm/s32k389/gmac/eqos-rx` and `/arm/s32k389/gmac/eqos-tx` passed. The supplied
-Ethernet ELF also ran for the 15-second smoke-test interval on that binary
-without guest errors; the expected timeout terminated the continuously
-running firmware. That smoke run used `-nic none`, so it is not a TAP
-end-to-end firmware test.
+working checkout, so Ninja's Meson regeneration there fails before it can build
+or link QEMU. The documentation tree is intentionally left untouched. The
+existing build tree was configured and rebuilt with a temporary copy of the
+documentation build metadata, then that copy was removed. The S32K389 GMAC
+qtest executable passed both `/arm/s32k389/gmac/eqos-rx` and
+`/arm/s32k389/gmac/eqos-tx`, including the IRQ assertion and W1C deassertion.
+The supplied Ethernet ELF also ran for the 15-second smoke-test interval on a
+previously validated binary without guest errors; the expected timeout
+terminated the continuously running firmware. That smoke run used `-nic none`,
+so it is not a TAP end-to-end firmware test.
 
 Fast source checks:
 
@@ -661,7 +684,8 @@ Priority order:
    multicast filtering.
 2. Add a host-to-guest RX test; current tcpdump evidence primarily proves
    guest-to-host TX.
-3. Verify all S32K389 IRQ numbers against the official interrupt map.
+3. Check remaining peripheral IRQ assignments against the supplied interrupt
+   map; exercise GMAC1's separately wired channel 0 IRQs in qtests.
 4. Decide and implement secondary-core peripheral IRQ routing.
 5. Add a second Ethernet backend option for GMAC1.
 6. Implement complete S32K389 PCS/RGMII and MII semantics if the firmware
