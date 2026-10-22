@@ -659,13 +659,22 @@ static void s32k389_init_gmac(S32K389State *s, MachineState *machine)
     qemu_log_mask(CPU_LOG_INT, "Initializing GMAC Ethernet instances\n");
 
     for (int i = 0; i < S32K389_GMAC_COUNT; i++) {
+        uint8_t mac[6] = {
+            0x02, 0x00, 0x00, 0x00, 0x00, (uint8_t)i,
+        };
+
         snprintf(name, sizeof(name), "gmac%d", i);
         object_initialize_child(OBJECT(machine), name, &s->gmac[i],
                                 TYPE_NPCM_GMAC);
 
         object_property_set_bool(OBJECT(&s->gmac[i]), "s32k3-mode", true,
                                  &error_fatal);
-        qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, name);
+        /*
+         * Use synthetic locally administered defaults. These are not MAC
+         * addresses provisioned by the S32K389 silicon or board vendor.
+         */
+        qdev_prop_set_macaddr(DEVICE(&s->gmac[i]), "mac", mac);
+        qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, NULL);
         sysbus_realize(SYS_BUS_DEVICE(&s->gmac[i]), &error_fatal);
         sysbus_mmio_map(SYS_BUS_DEVICE(&s->gmac[i]), 0, gmac_bases[i]);
         sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]), 0,

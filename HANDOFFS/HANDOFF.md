@@ -2,11 +2,13 @@
 
 **Repo root:** `C:\QEMU\qemu_s32k344` (a QEMU source tree; the board model lives in `hw/arm/s32k389.c` / `hw/arm/s32k389.h`)
 
-**Status as of this handoff:** all originally-scoped peripheral work is complete. Every task below is `completed` or `deleted` (N/A) in the task list. There is no in-progress work.
+**Status note:** This document includes historical status claims from earlier work. Completion of those original tasks does not mean that every S32K389 peripheral is at VDK-level fidelity.
 
-**Current status (2026-08-07):** the S32K389 machine model is built and available in the current workspace; a local `make -j4 qemu-system-arm` run completed successfully. The most recent functional addition was the SAI peripheral model, which was implemented, wired into the board, and documented here along with its verification notes and known limitations.
+**Current status (2026-10-01):** the board has the major peripheral instances wired and a workbook-backed validator for a selected set of MMIO bases and IRQs. Several device models remain approximations; GMAC uses QEMU's NPCM model with an S32K3-specific mode rather than a silicon-native implementation. Treat device-level fidelity and runtime validation separately from static map validation.
 
-**Changes made in this pass:** added the SAI device model and board integration (`hw/audio/s32k3_sai.c` / `.h`), exposed the new peripheral through the S32K389 board headers and initialization path, updated the audio build configuration (`hw/audio/Kconfig` and `hw/audio/meson.build`), and added the new wiring in `hw/arm/s32k389.c` / `.h` and `hw/arm/Kconfig`. This document now captures the current build outcome, the implemented peripheral set, and the remaining verification gaps for future work.
+**Ethernet/CAN implementation note:** the board-level wiring for two GMAC controllers and twelve FlexCAN controllers is present. The GMAC defaults are synthetic locally administered MAC addresses, not identities provisioned by S32K389 silicon or a board vendor. A production-oriented model still needs complete hardware-backed behavior and packet/frame-level validation.
+
+**Historical change:** the SAI device model and board integration (`hw/audio/s32k3_sai.c` / `.h`) were added in an earlier pass, with corresponding audio build configuration and S32K389 board wiring.
 
 ### Why it was failing and how it was fixed
 
@@ -38,7 +40,7 @@ Plus, separately: **multi-core** (real chip has 4 Cortex-M7 cores; model started
 ## 2. Reference material
 
 - `NXP Manuals/S32K3XXRM.pdf` in the repo (also copied to the uploads folder as `S32K3xx-Manual.pdf` / `S32K3xx.pdf`) — the S32K3xx Reference Manual, Rev. 12. This is the primary source for every register map, bitfield, and reset value used below. Extract text with `pdftotext -f <start> -l <end> -layout manual.pdf out.txt`, or dump the whole thing (`pdftotext -layout manual.pdf full.txt`, ~350k lines) and `grep -n` for chapter/section headers — this was the most reliable technique once page-number-only extraction proved to not line up with the PDF's internal page numbering for some chapters (always double check by grepping for the chapter title text, not just assumed page ranges).
-- `S32K3xx_memory_map.xlsx` and `S32K3xx_interrupt_map.xlsx` were referenced earlier in the project (before this session) for some base addresses and IRQ numbers, but **were not available as uploaded files during this session**. Anywhere an IRQ number could not be cross-checked against that spreadsheet, it is explicitly marked in the header comments as `UNVERIFIED PLACEHOLDER`. See §6 for the full list of these gaps.
+- `NXP Manuals/S32K3xx_memory_map.xlsx` and `NXP Manuals/S32K3xx_interrupt_map.xlsx` are checked into this repository and are used by `scripts/validate_s32k389_spec.py`. Some older handoff notes were written before those workbooks were available and their "unverified" labels or values may now be stale; use the workbook and current header comments as the source of truth.
 - Sibling board file `hw/arm/s32k388.c` / `.h` (already in this codebase, pre-existing) was used directly as a reuse source for GMAC, on the strength of the manual's Table 618 grouping S32K388 and S32K389 in the same column for that peripheral.
 
 ## 3. Build workflow — READ THIS BEFORE BUILDING
@@ -49,10 +51,12 @@ This is the single most error-prone part of working in this environment. Get it 
 
 - The user's actual project folder (`C:\QEMU\qemu_s32k344`, seen from the bash sandbox as `/sessions/<session>/mnt/qemu_s32k344`) has **CRLF line endings** on every file (Windows checkout). QEMU's meson/ninja/configure scripts do not tolerate CRLF and will fail or behave strangely if built in place.
 - The working build copy is a clean Linux clone kept at **`/tmp/qbuild`**, created via:
+
   ```
   git clone --local --no-hardlinks /sessions/<session>/mnt/qemu_s32k344 /tmp/qbuild
   ```
 - **Critical gotcha:** `git clone` only replicates *committed* git content. Every peripheral file in this project was authored via the Write/Edit tools directly against the real project folder and was **never committed** — so a fresh clone of `/tmp/qbuild` will be missing all of it. After any clone (fresh or re-created), you must manually re-sync every touched/new file:
+
   ```bash
   SRC=/sessions/<session>/mnt/qemu_s32k344
   DST=/tmp/qbuild
@@ -61,6 +65,7 @@ This is the single most error-prone part of working in this environment. Get it 
     sed -i 's/\r$//' "$DST/$f"   # strip CRLF
   done
   ```
+
   The full list of files that need this treatment is in §7 below (every file marked "new" or "modified").
 
 ### 3.2 Sandbox persistence is NOT guaranteed
@@ -77,6 +82,7 @@ This is the single most error-prone part of working in this environment. Get it 
 ### 3.4 Toolchain PATH
 
 `ninja` and `meson` are not on the default PATH in a fresh bash call. Every bash call that invokes them needs:
+
 ```bash
 export PATH=/sessions/<session>/.local/bin:$PATH
 ```
@@ -84,10 +90,12 @@ export PATH=/sessions/<session>/.local/bin:$PATH
 ### 3.5 Recurring subproject-fetch flake
 
 `berkeley-softfloat-3` / `berkeley-testfloat-3` meson subprojects sometimes fail to fully fetch (usually after a fresh clone + configure). Fix:
+
 ```bash
 rm -rf /tmp/qbuild/subprojects/berkeley-softfloat-3 /tmp/qbuild/subprojects/berkeley-testfloat-3
 cd /tmp/qbuild/build && ../configure --target-list=arm-softmmu
 ```
+
 This is idempotent — safe to run whenever `ninja` complains about a missing/broken subproject, or when `build.ninja` doesn't exist yet (`ninja: error: loading 'build.ninja': No such file or directory` — this can also just mean the configure call itself got cut off by the 45s timeout before finishing; simply re-run `../configure` again).
 
 ### 3.6 Standard build sequence (copy-paste starting point)
@@ -111,6 +119,7 @@ timeout 6 ./qemu-system-arm -M s32k389 -nographic -monitor stdio -serial null -S
   -device loader,addr=<ADDR2>,data=<VAL2>,data-len=4 \
   ...
 ```
+
 - `-S` freezes the CPU at startup (so nothing executes and clobbers your test state) — but note **`QEMU_CLOCK_VIRTUAL` does not advance while the CPU is paused this way**, which limits how far you can dynamically verify anything timer/tick-driven (eMIOS counters, SAI's FIFO drain timer, SWT countdowns) — you can prove the *setup* and *live-flag-computation* logic works, but not real elapsed-time drain/countdown behavior, from this harness alone. This limitation was hit and explicitly flagged to the user multiple times rather than faking a pass.
 - Multiple `-device loader` entries targeting the **same address** apply strictly in command-line order — this is how sequences of register writes (e.g. "unlock LUT, then load LUT, then trigger IPCR twice") were expressed without needing a real running CPU.
 - `-device loader,addr=X,data=Y,data-len=N,cpu-num=M` targets a specific CPU's private address space (defaults to `first_cpu` / core 0 without `cpu-num=`) — used for multi-core TCM isolation testing.
@@ -127,55 +136,57 @@ timeout 6 ./qemu-system-arm -M s32k389 -nographic -monitor stdio -serial null -S
 This QEMU checkout is a **modern version where several APIs differ from older QEMU tutorials/examples you may have memorized.** Every existing `s32k3_*.c` peripheral in this repo already follows the corrected convention below — **copy an existing sibling file's structure rather than writing from generic QEMU device-model memory.**
 
 1. **Header include paths use the `hw/core/` prefix**, not the bare `hw/` path:
+
    - `#include "hw/core/sysbus.h"` (NOT `"hw/sysbus.h"`)
    - `#include "hw/core/irq.h"` (NOT `"hw/irq.h"`)
    - `#include "hw/core/qdev-properties.h"` (NOT `"hw/qdev-properties.h"`)
-   This tripped up the SAI build in this exact session (`fatal error: hw/sysbus.h: No such file or directory`) — fixed by grepping a sibling file (`hw/timer/s32k3_emios.c`) for its actual include list and matching it exactly.
-
+     This tripped up the SAI build in this exact session (`fatal error: hw/sysbus.h: No such file or directory`) — fixed by grepping a sibling file (`hw/timer/s32k3_emios.c`) for its actual include list and matching it exactly.
 2. **`DeviceClass` in this tree has no `.reset` member at all** (confirmed by reading `include/hw/core/qdev.h`'s `struct DeviceClass` directly — no `reset` field present; reset dispatch has moved entirely to the `ResettableClass` phases mechanism (`enter`/`hold`/`exit`), which none of the existing `s32k3_*` peripherals use). **The established convention in this codebase is to skip the Resettable API entirely** and instead:
+
    - Write a plain `static void foo_reset(DeviceState *dev)` function that zeroes all registers/state.
    - Call it **once, manually, from the end of the device's `realize()` function** (`dc->realize = foo_realize`, and `foo_realize()` ends by calling `foo_reset(dev)`).
    - Do **not** attempt `dc->reset = foo_reset;` — this will not compile (`error: 'DeviceClass' has no member named 'reset'`).
    - **Known consequence/limitation:** because of this, a guest-triggered system reset (or QEMU's `system_reset` monitor command) will **NOT** re-initialize any of these peripheral models' register state. They only reset once, at machine construction time. If a future task requires real reset-button/watchdog-triggered peripheral reinitialization, this would need to be revisited by wiring up `ResettableClass` phases properly across all `s32k3_*` peripherals (a nontrivial cross-cutting change, not attempted in this project).
-
 3. **`class_init` signature takes `const void *data`**, not `void *data`:
+
    ```c
    static void foo_class_init(ObjectClass *klass, const void *data)
    ```
-   Using plain `void *data` produces `error: initialization of 'void (*)(ObjectClass *, const void *)' from incompatible pointer type` due to `-Werror`.
 
+   Using plain `void *data` produces `error: initialization of 'void (*)(ObjectClass *, const void *)' from incompatible pointer type` due to `-Werror`.
 4. **`Property` arrays must be declared `const`:**
+
    ```c
    static const Property foo_props[] = { DEFINE_PROP_UINT32(...), };
    ```
+
    (not `static Property foo_props[]`).
-
 5. The build uses `-Werror` with a large warning set — any of the above mismatches (or an unused variable, implicit fallthrough, etc.) will hard-fail the build, not just warn.
-
 6. Standard skeleton to copy from (best current example): `hw/timer/s32k3_emios.c` / `.h`. It demonstrates the full correct pattern: sysbus device with MMIO + IRQ, QOM properties, VMState, timer-based lazy/event-driven modeling, and the reset-called-from-realize convention.
 
 ## 6. Peripheral-by-peripheral summary
 
-All base addresses/bitfields below were cross-checked against the S32K3xx Reference Manual Rev. 12 unless marked otherwise. Every "UNVERIFIED PLACEHOLDER" IRQ note below is copy-pasted verbatim from the actual header comments in the repo — search for that exact phrase in `hw/arm/s32k389.h` to find every remaining gap in one grep.
+The table distinguishes source-verified addresses/IRQs from implementation status. A verified map value does not imply that the peripheral model is fully hardware-faithful; remaining behavioral gaps are described in the detailed notes below.
 
 | # | Peripheral | Status | Base address(es) | Notes |
 |---|---|---|---|---|
 | 3 | LPSPI x6 | done (prior session) | 0x40358000, 0x4035C000, 0x40360000, 0x40364000, 0x404BC000, 0x404C0000 | IRQs 165-170, verified against interrupt map |
-| 4 | LPI2C x2 | done (prior session) | 0x40350000, 0x40354000 | IRQs 175/176, **UNVERIFIED PLACEHOLDER** |
-| 5 | SWT (watchdog) x4 | done (prior session) | 0x40270000, 0x4046C000, 0x40470000, 0x40070000 | IRQs 177-180, **UNVERIFIED PLACEHOLDER** |
+| 4 | LPI2C x2 | done (prior session) | 0x40350000, 0x40354000 | IRQs 161/162, verified against the S32K389 interrupt map |
+| 5 | SWT (watchdog) x4 | **verified** | 0x40270000, 0x4046C000, 0x40470000, 0x40070000 | IRQs 42, 43, 44, 58 (matching `Watchdog 0..3` in the interrupt map) |
 | 6 | CRC | done (prior session) | 0x40380000 | No interrupt (manual: "This module has no interrupts") |
-| 7 | ADC x3 (24ch, 12-bit) | done (prior session) | 0x400A0000, 0x400A4000, 0x400A8000 | IRQs 181-183, **UNVERIFIED PLACEHOLDER** |
-| 8 | eMIOS x3 (24ch timer) | done (prior session) | 0x40088000, 0x4008C000, 0x40090000 | IRQs 184-186, **UNVERIFIED PLACEHOLDER**. Modeled as lazy/on-demand counter (computes live CNT from elapsed `QEMU_CLOCK_VIRTUAL` time + one event timer per channel for the next match), not a real per-tick callback (avoids pegging host CPU at an assumed 80MHz rate). The 80MHz clock assumption itself is **flagged unverified** in the header — not cross-checked against a specific manual clock table. |
-| 9 | eDMA (32 channel) | done (prior session) | mgmt 0x4020C000, channel page 0x40210000 | IRQs 187-218 (one per channel), **UNVERIFIED PLACEHOLDER**. Real synchronous memory-to-memory transfers via `address_space_read/write(&address_space_memory, ...)`. Handles SSIZE==DSIZE precisely (real per-transfer-size stepped copy) and SSIZE!=DSIZE via a documented simplification (byte-by-byte copy of total count). |
+| 7 | ADC x3 (24ch, 12-bit) | done (prior session) | 0x400A0000, 0x400A4000, 0x400A8000 | IRQs 180-182, verified against the S32K389 interrupt map |
+| 8 | eMIOS x3 (24ch timer) | done (prior session) | 0x40088000, 0x4008C000, 0x40090000 | IRQs 61, 69, 77, verified against the S32K389 interrupt map. Modeled as lazy/on-demand counter (computes live CNT from elapsed `QEMU_CLOCK_VIRTUAL` time + one event timer per channel for the next match), not a real per-tick callback (avoids pegging host CPU at an assumed 80MHz rate). The 80MHz clock assumption remains unverified. |
+| 9 | eDMA (32 channel) | done (prior session) | mgmt 0x4020C000, channel page 0x40210000 | IRQs 4-35, verified against the S32K389 interrupt map. Real synchronous memory-to-memory transfers via `address_space_read/write(&address_space_memory, ...)`. Handles SSIZE==DSIZE precisely (real per-transfer-size stepped copy) and SSIZE!=DSIZE via a documented simplification (byte-by-byte copy of total count). |
 | 10 | Multi-core (4x CM7) | done (prior session) | — | See detailed note below. |
-| 11 | GMAC Ethernet x2 | done (prior session) | 0x40484000, 0x40488000 | IRQs 224 / 171 (reused from `s32k388.h`). Directly reuses QEMU's existing `hw/net/npcm_gmac.c` model (already compiled into this build for the sibling S32K388 board) — justified by manual Table 618 grouping S32K388/S32K389 in one column. |
-| 12 | QuadSPI | **done, verified this/prior session** | controller 0x404CC000, ARDB 0x68000000 | IRQ 219, **UNVERIFIED PLACEHOLDER**. LUT-sequence-engine model: 80 LUT registers (16 sequences x 5 regs x 2 instructions), IPCR[SEQID] triggers execution against a 16MB malloc'd `flash[]` array at SFAR offset. LUT writes rejected unless unlocked via LUTKEY (0x5AF05AF0) then LCKCR[UNLOCK]. AHB memory-mapped flash *aperture* is NOT modeled (only the IP-bus command path) since its exact base address wasn't confirmed in available excerpts. **Verified this session**: unlock LUT -> program WRITE sequence (opcode 8) -> push 4 words via TBDR -> trigger IPCR -> program READ sequence (opcode 7) -> trigger IPCR again -> read back RBDR0-3 via monitor `xp` and got an exact match of all 4 original words, proving the internal flash round-trip works. No guest errors. |
+| 11 | GMAC Ethernet x2 | partially implemented | 0x40484000, 0x40488000 | IRQs 224 / 171, verified against the S32K389 interrupt map. Uses QEMU's NPCM GMAC model with an S32K3 EQOS/DMA mode; shared GMAC instance count in manual Table 618 does not by itself establish full IP-level equivalence. |
+| 12 | QuadSPI | **done, verified this/prior session** | controller 0x404CC000, ARDB 0x68000000 | IRQ 173, verified against the S32K389 interrupt map. LUT-sequence-engine model: 80 LUT registers (16 sequences x 5 regs x 2 instructions), IPCR[SEQID] triggers execution against a 16MB malloc'd `flash[]` array at SFAR offset. LUT writes rejected unless unlocked via LUTKEY (0x5AF05AF0) then LCKCR[UNLOCK]. AHB memory-mapped flash *aperture* is NOT modeled (only the IP-bus command path) since its exact base address wasn't confirmed in available excerpts. **Verified this session**: unlock LUT -> program WRITE sequence (opcode 8) -> push 4 words via TBDR -> trigger IPCR -> program READ sequence (opcode 7) -> trigger IPCR again -> read back RBDR0-3 via monitor `xp` and got an exact match of all 4 original words, proving the internal flash round-trip works. No guest errors. |
 | 13 | uSDHC | **deleted / not applicable** | — | Manual Table 809 ("uSDHC instances") explicitly lists S32K388 **and S32K389** in the "No" column for uSDHC support — this SoC variant genuinely does not have this peripheral on real silicon. User was asked and chose "skip uSDHC" over "implement anyway as non-standard extra." No files were created for this. If ever reversed, `hw/sd/sdhci.c` (QEMU's generic SDHCI model, already confirmed compiling into this build) was identified as the likely reuse candidate, analogous to the GMAC reuse pattern — reset value tables and register map are at manual chapter 81 (search `full.txt` for `Chapter 81` / `uSDHC memory map`, base address for chips that DO have it is `404E_4000h`). |
-| 14 | SAI (I2S audio) x2 | **done, verified this session** | SAI_0 0x4036C000, SAI_1 0x404DC000 | IRQs 220/221, **UNVERIFIED PLACEHOLDER**. See detailed note below. |
+| 14 | SAI (I2S audio) x2 | **done, verified this session** | SAI_0 0x4036C000, SAI_1 0x404DC000 | IRQs 174/175 (S32K389 `Synchronous Audio Interface 0/1 RX interrupt` rows in the interrupt map). |
 
 ### 6.1 Multi-core detail (task #10)
 
 Real S32K389 has 4 physical Cortex-M7 cores in a lockstep/split-lock topology (manual §3.4/§3.5). A hardware lockstep checker core has no independently observable software behavior (it's a silent comparator), so there is nothing meaningful to emulate for "true lockstep." Instead:
+
 - All 4 physical cores are exposed as **independent, separately-programmable Cortex-M7 CPUs** (`s->armv7m` for core0, plus `s->core1/core2/core3`), each with a genuinely isolated private ITCM/DTCM.
 - Isolation mechanism: `memory_region_init_alias(core_mem, obj, name, system_memory, 0, UINT32_MAX)` creates a full aliased view of the shared bus, then `memory_region_add_subregion_overlap(core_mem, addr, itcm/dtcm, priority=1)` overlays that core's private RAM at the fixed local addresses (0x0 ITCM, 0x2000_0000 DTCM), masking the alias only at those ranges — everything else (flash, shared SRAM, peripherals) is visible identically across all cores.
 - `armv7m_load_kernel(cpu, kernel_filename, ...)` must be called once per CPU (it also registers that CPU's reset handler) — core0 gets the real kernel filename, cores 1-3 are called with `kernel_filename=NULL` (skips reloading flash, which is shared, but still registers the per-core reset handler).
@@ -200,10 +211,12 @@ Files: `hw/audio/s32k3_sai.h`, `hw/audio/s32k3_sai.c` (new this session).
 ## 7. Complete list of repo files touched (for re-syncing into a fresh `/tmp/qbuild` clone)
 
 **New files this session:**
+
 - `hw/audio/s32k3_sai.h`
 - `hw/audio/s32k3_sai.c`
 
 **New files, prior sessions (already existed before this handoff's work began, still relevant if re-syncing from scratch):**
+
 - `hw/ssi/s32k3_lpspi.h` / `.c`
 - `hw/i2c/s32k3_lpi2c.h` / `.c`
 - `hw/watchdog/s32k3_swt.h` / `.c`
@@ -217,6 +230,7 @@ Files: `hw/audio/s32k3_sai.h`, `hw/audio/s32k3_sai.c` (new this session).
 - `hw/net/s32k3_flexcan.h` (pre-existing FlexCAN, older work)
 
 **Modified files this session:**
+
 - `hw/audio/Kconfig` — added `config S32K3_SAI / bool`
 - `hw/audio/meson.build` — added `system_ss.add(when: 'CONFIG_S32K3_SAI', if_true: files('s32k3_sai.c'))`
 - `hw/arm/s32k389.h` — added `#include "hw/audio/s32k3_sai.h"`, the `S32K389_NUM_SAI`/`S32K3_SAI0_BASE`/`S32K3_SAI1_BASE`/`S32K3_SAI0_PARAM_RESET`/`S32K3_SAI1_PARAM_RESET`/`S32K3_SAI0_IRQ`/`S32K3_SAI1_IRQ` defines, and `DeviceState* sai[S32K389_NUM_SAI];` struct field
@@ -229,22 +243,22 @@ None of these changes have been committed to git (the repo is a plain working tr
 
 ## 8. Task list state at handoff
 
-| ID | Subject | Status |
-|---|---|---|
-| 1 | Compare QEMU S32K389 model vs real S32K389 | completed |
-| 2 | Write comparison docx | completed |
-| 3 | LPSPI functional model (6 instances) | completed |
-| 4 | LPI2C functional model (2 instances) | completed |
-| 5 | Software Watchdog (SWT) model | completed |
-| 6 | CRC peripheral model | completed |
-| 7 | ADC model (3x 24-channel 12-bit) | completed |
-| 8 | eMIOS timer/PWM model | completed |
-| 9 | eDMA controller model (32 channel) | completed |
-| 10 | Multi-core: add 3 extra Cortex-M7 cores + lockstep stub | completed |
-| 11 | Ethernet: GMAC x2 (1Gbps TSN) | completed |
-| 12 | QuadSPI controller (S32K388/389 variant) | completed |
-| 13 | uSDHC controller model | **deleted** (not applicable — see §6, real S32K389 has no uSDHC) |
-| 14 | SAI (I2S audio) model | completed |
+| ID | Subject                                                 | Status                                                                   |
+| -- | ------------------------------------------------------- | ------------------------------------------------------------------------ |
+| 1  | Compare QEMU S32K389 model vs real S32K389              | completed                                                                |
+| 2  | Write comparison docx                                   | completed                                                                |
+| 3  | LPSPI functional model (6 instances)                    | completed                                                                |
+| 4  | LPI2C functional model (2 instances)                    | completed                                                                |
+| 5  | Software Watchdog (SWT) model                           | completed                                                                |
+| 6  | CRC peripheral model                                    | completed                                                                |
+| 7  | ADC model (3x 24-channel 12-bit)                        | completed                                                                |
+| 8  | eMIOS timer/PWM model                                   | completed                                                                |
+| 9  | eDMA controller model (32 channel)                      | completed                                                                |
+| 10 | Multi-core: add 3 extra Cortex-M7 cores + lockstep stub | completed                                                                |
+| 11 | Ethernet: GMAC x2 (1Gbps TSN)                           | completed                                                                |
+| 12 | QuadSPI controller (S32K388/389 variant)                | completed                                                                |
+| 13 | uSDHC controller model                                  | **deleted** (not applicable — see §6, real S32K389 has no uSDHC) |
+| 14 | SAI (I2S audio) model                                   | completed                                                                |
 
 **There is no pending/in-progress task.** All four originally-requested peripheral groups are fully addressed (uSDHC's absence is itself the correct, verified outcome, not an incomplete item).
 
@@ -252,7 +266,7 @@ None of these changes have been committed to git (the repo is a plain working tr
 
 None of these are blocking — they're the honest list of what a next round of hardening could target, roughly in order of value:
 
-1. **Interrupt map spreadsheet.** A large fraction of IRQ numbers across nearly every peripheral added are `UNVERIFIED PLACEHOLDER` (chosen as sequential unused numbers rather than cross-checked against `S32K3xx_interrupt_map.xlsx`, which was unavailable during this whole project). If that spreadsheet becomes available, grep `hw/arm/s32k389.h` for the literal string `UNVERIFIED PLACEHOLDER` to find every IRQ define that needs correcting — there are roughly a dozen instances (LPI2C, SWT, ADC, eMIOS, eDMA, QuadSPI, GMAC IRQs are verified via s32k388 reuse but not independently, SAI, STCU2 base address).
+1. **Interrupt map spreadsheet.** The board now checks the actual `S32K3xx_interrupt_map.xlsx` for the S32K389 column before accepting IRQ values. The remaining truly unverified items are the ones that have no spreadsheet row at all (for example STCU2's base address and any future not-yet-mapped peripheral), while the previously wrong SWT/SAI placeholders have been corrected to the workbook values (42/43/44/58 and 174/175).
 2. **Cross-core interrupt routing.** Only core 0's NVIC has peripheral IRQs wired. If firmware needs to run peripheral-driven interrupt handlers on cores 1-3, this needs a routing decision (which core owns which peripheral IRQ) that isn't documented anywhere available.
 3. **Cross-core memory isolation dynamic test.** The structural `info mtree` proof was accepted, but a genuinely conclusive interactive dynamic test (write via one core's address space, confirm invisibility from another core's `xp`) was never obtained — every attempt gave confusing results attributed to a monitor/`-device loader` harness limitation, not a code bug. Worth revisiting with a different verification technique (e.g., a tiny real ELF payload with per-core branching, run without `-S`, that writes a core-specific marker into its own ITCM and reports back over a UART) rather than the monitor-only technique used throughout this project.
 4. **SAI RX audio injection.** Currently permanently empty by design (no external source). If a use case emerges needing simulated incoming audio, add a QOM property or chardev backend that pushes words into `rx_fifo[0]`.
@@ -296,9 +310,7 @@ Verification commands used:
 
 - Launch QEMU with TAP + auto-created tap0:
 
-  sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 \
-       ELF/s32k389/Eth_InternalLoopback_S32K389.elf
-
+  sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
 - Capture host-side packets from the TAP interface:
 
   sudo tcpdump -i tap0 -n -e
@@ -308,21 +320,21 @@ Verification commands used:
 Notes and recommendations / next steps:
 
 - If the firmware under test uses a strictly internal MAC-level loopback that never drives the PHY or netdev, host-side capture will still not show those frames. In that case either:
+
   - modify the firmware to send frames that traverse the netdev (disable true internal loopback), or
   - instrument the firmware (serial/console/logging) to report transmit/receive events, or
   - add a QEMU-side debug hook in the GMAC model to mirror loopback frames to a pcap sink (non-trivial change in `hw/net/npcm_gmac.c`).
-
 - If TAP creation is undesirable for security or policy reasons, prefer `--ethernet user` which uses QEMU user-mode networking and does not require host TAP setup.
-
 - The launcher now documents example monitor usage (TCP/unix sockets). If you want the helper script to itself start QEMU with a TCP monitor socket, that can be added as a small enhancement — currently the script uses `-serial mon:stdio` by default (interactive combined monitor and serial on stdio).
 
 This note and the `launch_qemu_389.sh` changes are intended to make reproducing packet captures easier for future testers and to reduce manual host setup steps.
 
-
 ## 12. Quick Launch Commands
+
 Below are ready-to-run commands for the Ethernet and CAN demos using the updated launcher, plus the host-side commands to observe traffic and to clean up interfaces when done.
 
 CAN demo — SocketCAN (vcan) visible on host
+
 - Launch QEMU using SocketCAN (auto-creates vcan0 if missing):
   sudo ./launch_qemu_389.sh --can socketcan --can-ifname vcan0 ELF/s32k389/FlexCAN_Ip_Example_S32K389.elf
 - On the host, observe CAN frames (requires can-utils):
@@ -334,11 +346,13 @@ CAN demo — SocketCAN (vcan) visible on host
   then run: sudo candump vcan0
 
 CAN demo — internal QEMU CAN bus (no host socket)
+
 - Launch with an internal QEMU CAN bus (no host SocketCAN):
   sudo ./launch_qemu_389.sh --can internal ELF/s32k389/FlexCAN_Ip_Example_S32K389.elf.elf
 - No host-side SocketCAN interface is present; inspect firmware output on serial/console (the script uses -serial mon:stdio).
 
 Helpful monitor / capture notes
+
 - Use tcpdump -i tap0 -n -e or Wireshark on the tap interface to see Ethernet frames.
 - If you see QEMU warnings like "nic … has no peer" or tcpdump says "That device is not up", bring up the interface manually:
   sudo ip link set tap0 up
@@ -347,6 +361,7 @@ Helpful monitor / capture notes
 - If the firmware uses an internal MAC loopback that never sends frames to the netdev, host-side capture will not show those frames. In that case, either disable internal loopback in firmware or inspect the guest-side logs/serial output.
 
 Cleanup (remove auto-created interfaces)
+
 - Remove TAP:
   sudo ip link delete tap0
 - Remove vcan:
@@ -354,7 +369,7 @@ Cleanup (remove auto-created interfaces)
 
 Ethernet demo - TAP
 TAP test:
-sudo ./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
+sudo scripts/./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
 
 In another terminal confirm the TAP is up and watch traffic:
 sudo ip addr show dev tap0

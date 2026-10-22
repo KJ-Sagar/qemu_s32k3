@@ -327,8 +327,8 @@ else
 fi
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}" )" &> /dev/null && pwd )"
-REPO_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
-QEMU_BIN="$REPO_DIR/build/qemu-system-arm"
+REPO_ROOT="$( cd -- "$SCRIPT_DIR/.." &> /dev/null && pwd )"
+QEMU_BIN="$REPO_ROOT/build/qemu-system-arm"
 
 if [ -z "$KERNEL_PATH" ]; then
     usage
