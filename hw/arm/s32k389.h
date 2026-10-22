@@ -269,18 +269,25 @@ OBJECT_DECLARE_SIMPLE_TYPE(S32K389State, S32K389)
 // (hw/arm/s32k388.h) on the strength of that grouping, rather than
 // independently re-derived from a S32K389-specific memory-map excerpt.
 // IRQ assignments cross-checked against S32K3xx_interrupt_map.xlsx,
-// S32K389 column: GMAC0 common/Ch0 TX/Ch0 RX = 224/225/226;
-// GMAC1 common/Ch0 TX/Ch0 RX = 171/172/233. This board currently routes
-// common, channel 0 TX, and channel 0 RX outputs independently.
+// S32K389 column. The reference manual configures three GMAC DMA channels.
 #define S32K389_GMAC_COUNT 2
+#define S32K389_GMAC_DMA_CHANNELS NPCM_GMAC_DMA_CHANNELS
 #define S32K389_GMAC0_BASE 0x40484000
 #define S32K389_GMAC1_BASE 0x40488000
 #define S32K389_GMAC0_IRQ  224
 #define S32K389_GMAC1_IRQ  171
 #define S32K389_GMAC0_CH0_TX_IRQ 225
 #define S32K389_GMAC0_CH0_RX_IRQ 226
+#define S32K389_GMAC0_CH1_TX_IRQ 227
+#define S32K389_GMAC0_CH1_RX_IRQ 228
+#define S32K389_GMAC0_CH2_TX_IRQ 229
+#define S32K389_GMAC0_CH2_RX_IRQ 230
 #define S32K389_GMAC1_CH0_TX_IRQ 172
 #define S32K389_GMAC1_CH0_RX_IRQ 233
+#define S32K389_GMAC1_CH1_TX_IRQ 234
+#define S32K389_GMAC1_CH1_RX_IRQ 235
+#define S32K389_GMAC1_CH2_TX_IRQ 236
+#define S32K389_GMAC1_CH2_RX_IRQ 237
 
 // QuadSPI
 // Controller register base verified against manual section 80.13.2.1

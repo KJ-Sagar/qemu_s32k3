@@ -17,7 +17,8 @@
  * for more details.
  *
  * Unsupported/unimplemented features:
- * - MII is not implemented, MII_ADDR.BUSY and MII_DATA always return zero
+ * - MII/MDIO behavior is a simplified PHY-register model; S32K3 EQOS Clause
+ *   45 transactions and full PHY/PCS negotiation are not implemented
  * - Basic PTP second/nanosecond counters are implemented.
  */
 
@@ -66,10 +67,42 @@ REG32(EQOS_DMA_CH0_CURRENT_APP_RXDESC, 0x114c)
 REG32(NPCM_EQOS_DMA_CH0_CURRENT_APP_TXDESC, 0x114c)
 REG32(EQOS_DMA_CH0_STATUS, 0x1160)
 REG32(EQOS_DMA_CH0_MISSED_FRAME_CNT, 0x1164)
+REG32(EQOS_DMA_CH1_CONTROL, 0x1180)
+REG32(EQOS_DMA_CH1_TX_CONTROL, 0x1184)
+REG32(EQOS_DMA_CH1_RX_CONTROL, 0x1188)
+REG32(EQOS_DMA_CH1_TXDESC_LIST_ADDRESS, 0x1194)
+REG32(EQOS_DMA_CH1_RXDESC_LIST_ADDRESS, 0x119c)
+REG32(EQOS_DMA_CH1_TXDESC_TAIL_POINTER, 0x11a0)
+REG32(EQOS_DMA_CH1_RXDESC_TAIL_POINTER, 0x11a8)
+REG32(EQOS_DMA_CH1_TXDESC_RING_LENGTH, 0x11ac)
+REG32(EQOS_DMA_CH1_RX_CONTROL2, 0x11b0)
+REG32(EQOS_DMA_CH1_INTERRUPT_ENABLE, 0x11b4)
+REG32(EQOS_DMA_CH1_CURRENT_APP_TXDESC, 0x11c4)
+REG32(EQOS_DMA_CH1_CURRENT_APP_RXDESC, 0x11cc)
+REG32(EQOS_DMA_CH1_STATUS, 0x11e0)
+REG32(EQOS_DMA_CH1_MISSED_FRAME_CNT, 0x11e4)
+REG32(EQOS_DMA_CH2_CONTROL, 0x1200)
+REG32(EQOS_DMA_CH2_TX_CONTROL, 0x1204)
+REG32(EQOS_DMA_CH2_RX_CONTROL, 0x1208)
+REG32(EQOS_DMA_CH2_TXDESC_LIST_ADDRESS, 0x1214)
+REG32(EQOS_DMA_CH2_RXDESC_LIST_ADDRESS, 0x121c)
+REG32(EQOS_DMA_CH2_TXDESC_TAIL_POINTER, 0x1220)
+REG32(EQOS_DMA_CH2_RXDESC_TAIL_POINTER, 0x1228)
+REG32(EQOS_DMA_CH2_TXDESC_RING_LENGTH, 0x122c)
+REG32(EQOS_DMA_CH2_RX_CONTROL2, 0x1230)
+REG32(EQOS_DMA_CH2_INTERRUPT_ENABLE, 0x1234)
+REG32(EQOS_DMA_CH2_CURRENT_APP_TXDESC, 0x1244)
+REG32(EQOS_DMA_CH2_CURRENT_APP_RXDESC, 0x124c)
+REG32(EQOS_DMA_CH2_STATUS, 0x1260)
+REG32(EQOS_DMA_CH2_MISSED_FRAME_CNT, 0x1264)
 
 REG32(EQOS_MAC_EXT_CONFIG, 0x4)
 REG32(EQOS_MAC_PACKET_FILTER, 0x8)
 REG32(EQOS_MAC_HASH_TABLE0, 0x10)
+REG32(EQOS_MAC_RXQ_CONTROL0, 0x0a0)
+REG32(EQOS_MAC_RXQ_CONTROL1, 0x0a4)
+REG32(EQOS_MAC_RXQ_CONTROL2, 0x0a8)
+REG32(EQOS_MAC_RXQ_CONTROL3, 0x0ac)
 REG32(EQOS_MAC_MDIO_ADDRESS, 0x200)
 REG32(EQOS_MAC_MDIO_DATA, 0x204)
 REG32(EQOS_MAC_ADDR0_HI, 0x300)
@@ -78,6 +111,7 @@ REG32(EQOS_MAC_ADDR1_HI, 0x308)
 REG32(EQOS_MAC_ADDR1_LO, 0x30c)
 REG32(EQOS_MAC_ADDR2_HI, 0x310)
 REG32(EQOS_MAC_ADDR2_LO, 0x314)
+REG32(EQOS_MTL_RXQ_DMA_MAP0, 0xc30)
 
 REG32(NPCM_GMAC_MAC_CONFIG, 0x0)
 REG32(NPCM_GMAC_FRAME_FILTER, 0x4)
@@ -114,6 +148,19 @@ REG32(NPCM_GMAC_PTP_TAR, 0x718)
 REG32(NPCM_GMAC_PTP_TTSR, 0x71c)
 
 /* Register Fields */
+#define EQOS_MDIO_ADDRESS_GB               BIT(0)
+#define EQOS_MDIO_ADDRESS_C45E             BIT(1)
+#define EQOS_MDIO_ADDRESS_GOC_SHIFT        2
+#define EQOS_MDIO_ADDRESS_GOC_LENGTH       2
+#define EQOS_MDIO_ADDRESS_GOC_WRITE        1
+#define EQOS_MDIO_ADDRESS_GOC_READ         3
+#define EQOS_MDIO_ADDRESS_CR_SHIFT         8
+#define EQOS_MDIO_ADDRESS_CR_LENGTH        4
+#define EQOS_MDIO_ADDRESS_PA_SHIFT         21
+#define EQOS_MDIO_ADDRESS_PA_LENGTH        5
+#define EQOS_MDIO_ADDRESS_RDA_SHIFT        16
+#define EQOS_MDIO_ADDRESS_RDA_LENGTH       5
+
 #define NPCM_GMAC_MII_ADDR_BUSY             BIT(0)
 #define NPCM_GMAC_MII_ADDR_WRITE            BIT(1)
 #define NPCM_GMAC_MII_ADDR_GR(rv)           extract16((rv), 6, 5)
@@ -127,6 +174,16 @@ REG32(NPCM_GMAC_PTP_TTSR, 0x71c)
 
 #define EQOS_DMA_CH0_TX_CONTROL_ST          BIT(0)
 #define EQOS_DMA_CH0_RX_CONTROL_SR          BIT(0)
+#define EQOS_DMA_CHANNEL_COUNT              3
+#define EQOS_DMA_CHANNEL_STRIDE             0x80
+#define EQOS_DMA_CHANNEL_WORD_STRIDE        (EQOS_DMA_CHANNEL_STRIDE / 4)
+#define EQOS_DMA_CH_REG(channel, reg) \
+    (R_EQOS_DMA_CH0_##reg + (channel) * EQOS_DMA_CHANNEL_WORD_STRIDE)
+
+static unsigned eqos_dma_channel_from_offset(hwaddr offset)
+{
+    return (offset - A_EQOS_DMA_CH0_CONTROL) / EQOS_DMA_CHANNEL_STRIDE;
+}
 #define EQOS_DMA_CH0_CONTROL_DSL_SHIFT      18
 #define EQOS_DMA_CH0_CONTROL_DSL_MASK       0x7
 /* S32K3xx uses a 64-bit GMAC DMA data bus. */
@@ -236,12 +293,139 @@ static void npcm_gmac_soft_reset(NPCMGMACState *gmac)
 
 static void gmac_phy_set_link(NPCMGMACState *gmac, bool active)
 {
-    /* Autonegotiation status mirrors link status.  */
+    uint16_t *bmcr = &gmac->phy_regs[0][MII_BMCR];
+    uint16_t *bmsr = &gmac->phy_regs[0][MII_BMSR];
+
     if (active) {
-        gmac->phy_regs[0][MII_BMSR] |= (MII_BMSR_LINK_ST | MII_BMSR_AN_COMP);
+        *bmsr |= MII_BMSR_LINK_ST;
+        if ((*bmcr & MII_BMCR_AUTOEN) && !(*bmcr & MII_BMCR_PDOWN)) {
+            *bmsr |= MII_BMSR_AN_COMP;
+        } else {
+            *bmsr &= ~MII_BMSR_AN_COMP;
+        }
     } else {
-        gmac->phy_regs[0][MII_BMSR] &= ~(MII_BMSR_LINK_ST | MII_BMSR_AN_COMP);
+        *bmsr &= ~(MII_BMSR_LINK_ST | MII_BMSR_AN_COMP);
     }
+}
+
+static void eqos_mdio_access(NPCMGMACState *gmac, uint32_t value)
+{
+    uint32_t operation = extract32(value, EQOS_MDIO_ADDRESS_GOC_SHIFT,
+                                   EQOS_MDIO_ADDRESS_GOC_LENGTH);
+    uint8_t phy = extract32(value, EQOS_MDIO_ADDRESS_PA_SHIFT,
+                            EQOS_MDIO_ADDRESS_PA_LENGTH);
+    uint8_t reg = extract32(value, EQOS_MDIO_ADDRESS_RDA_SHIFT,
+                            EQOS_MDIO_ADDRESS_RDA_LENGTH);
+    uint16_t data = 0xffff;
+
+    if (value & EQOS_MDIO_ADDRESS_C45E) {
+        qemu_log_mask(LOG_UNIMP, "%s: Clause 45 MDIO is not implemented\n",
+                      DEVICE(gmac)->canonical_path);
+    } else if (phy == 0 &&
+               reg < NPCM_GMAC_MAX_PHY_REGS) {
+        if (operation == EQOS_MDIO_ADDRESS_GOC_WRITE) {
+            data = gmac->regs[R_EQOS_MAC_MDIO_DATA];
+            if (phy == 0 && reg == MII_BMCR) {
+                if (data & MII_BMCR_RESET) {
+                    memcpy(gmac->phy_regs[0], phy_reg_init,
+                           sizeof(phy_reg_init));
+                    gmac_phy_set_link(gmac,
+                                      !qemu_get_queue(gmac->nic)->link_down);
+                    data = gmac->phy_regs[0][MII_BMCR];
+                } else {
+                    data &= ~(MII_BMCR_RESET | MII_BMCR_ANRESTART);
+                    gmac->phy_regs[phy][reg] = data;
+                    gmac_phy_set_link(gmac,
+                                      !qemu_get_queue(gmac->nic)->link_down &&
+                                      !(data & MII_BMCR_PDOWN));
+                    if ((data & MII_BMCR_AUTOEN) &&
+                        !(data & MII_BMCR_PDOWN) &&
+                        (gmac->phy_regs[phy][MII_BMSR] &
+                         MII_BMSR_LINK_ST)) {
+                        gmac->phy_regs[phy][MII_ANLPAR] =
+                            (gmac->phy_regs[phy][MII_ANAR] &
+                             (MII_ANAR_PAUSE | MII_ANAR_TXFD |
+                              MII_ANAR_TX | MII_ANAR_10FD |
+                              MII_ANAR_10 | MII_ANAR_CSMACD)) |
+                            MII_ANLPAR_ACK;
+                        gmac->phy_regs[phy][MII_BMSR] |=
+                            MII_BMSR_AN_COMP;
+                    }
+                }
+            } else {
+                gmac->phy_regs[phy][reg] = data;
+            }
+        } else if (operation == EQOS_MDIO_ADDRESS_GOC_READ) {
+            data = gmac->phy_regs[phy][reg];
+        } else {
+            qemu_log_mask(LOG_GUEST_ERROR,
+                          "%s: invalid EQOS MDIO operation %u\n",
+                          DEVICE(gmac)->canonical_path, operation);
+        }
+    }
+
+    if (operation == EQOS_MDIO_ADDRESS_GOC_READ ||
+        operation == EQOS_MDIO_ADDRESS_GOC_WRITE) {
+        if (operation == EQOS_MDIO_ADDRESS_GOC_READ) {
+            gmac->regs[R_EQOS_MAC_MDIO_DATA] = data;
+        }
+        trace_npcm_gmac_mdio_access(DEVICE(gmac)->canonical_path,
+                                    operation == EQOS_MDIO_ADDRESS_GOC_WRITE,
+                                    phy, reg, data);
+    }
+
+    gmac->regs[R_EQOS_MAC_MDIO_ADDRESS] =
+        value & ~EQOS_MDIO_ADDRESS_GB;
+}
+
+static unsigned eqos_rx_queue(NPCMGMACState *gmac,
+                              const uint8_t *buf, size_t len)
+{
+    uint32_t queue_enable = gmac->regs[R_EQOS_MAC_RXQ_CONTROL0];
+    uint32_t priorities = gmac->regs[R_EQOS_MAC_RXQ_CONTROL2];
+
+    if (len >= 18 &&
+        ((buf[12] == 0x81 && buf[13] == 0x00) ||
+         (buf[12] == 0x88 && buf[13] == 0xa8))) {
+        unsigned priority = (buf[14] >> 5) & 0x7;
+
+        for (unsigned queue = 0; queue < EQOS_DMA_CHANNEL_COUNT; queue++) {
+            uint32_t enabled = extract32(queue_enable, queue * 2, 2);
+            uint32_t priority_mask = extract32(priorities, queue * 8, 8);
+
+            if (enabled && (priority_mask & BIT(priority))) {
+                return queue;
+            }
+        }
+    }
+
+    unsigned queue = extract32(gmac->regs[R_EQOS_MAC_RXQ_CONTROL1], 12, 3);
+    return queue < EQOS_DMA_CHANNEL_COUNT &&
+           extract32(queue_enable, queue * 2, 2) ? queue : 0;
+}
+
+static unsigned eqos_rx_dma_channel(NPCMGMACState *gmac,
+                                    const uint8_t *buf, size_t len)
+{
+    static const unsigned map_shifts[EQOS_DMA_CHANNEL_COUNT] = { 0, 8, 16 };
+    static const unsigned dynamic_bits[EQOS_DMA_CHANNEL_COUNT] = { 4, 12, 20 };
+    unsigned queue = eqos_rx_queue(gmac, buf, len);
+    uint32_t map = gmac->regs[R_EQOS_MTL_RXQ_DMA_MAP0];
+    unsigned channel;
+
+    if (map & BIT(dynamic_bits[queue])) {
+        /* Dynamic DA/L3-L4 channel selection is not modeled yet. */
+        return 0;
+    }
+
+    channel = extract32(map, map_shifts[queue], 2);
+    if (channel >= EQOS_DMA_CHANNEL_COUNT) {
+        qemu_log_mask(LOG_GUEST_ERROR,
+                      "%s: RX queue %u maps to unavailable DMA channel %u\n",
+                      DEVICE(gmac)->canonical_path, queue, channel);
+        return 0;
+    }
+    return channel;
 }
 
 static bool gmac_can_receive(NetClientState *nc)
@@ -249,9 +433,16 @@ static bool gmac_can_receive(NetClientState *nc)
     NPCMGMACState *gmac = NPCM_GMAC(qemu_get_nic_opaque(nc));
 
     if (gmac->s32k3_mode) {
-        return (gmac->regs[R_NPCM_GMAC_MAC_CONFIG] & BIT(0)) &&
-               (gmac->regs[R_EQOS_DMA_CH0_RX_CONTROL] &
-                EQOS_DMA_CH0_RX_CONTROL_SR);
+        if (!(gmac->regs[R_NPCM_GMAC_MAC_CONFIG] & BIT(0))) {
+            return false;
+        }
+        for (int channel = 0; channel < EQOS_DMA_CHANNEL_COUNT; channel++) {
+            if (gmac->regs[EQOS_DMA_CH_REG(channel, RX_CONTROL)] &
+                EQOS_DMA_CH0_RX_CONTROL_SR) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /* If GMAC receive is disabled. */
@@ -273,9 +464,6 @@ static bool gmac_can_receive(NetClientState *nc)
  */
 static void gmac_update_irq(NPCMGMACState *gmac)
 {
-    int tx_level = 0;
-    int rx_level = 0;
-
     /*
      * Check if the normal interrupts summary is enabled
      * if so, add the bits for the summary that are enabled
@@ -299,9 +487,6 @@ static void gmac_update_irq(NPCMGMACState *gmac)
                     (NPCM_DMA_STATUS_NIS | NPCM_DMA_STATUS_AIS)));
 
     if (gmac->s32k3_mode) {
-        uint32_t status = gmac->regs[R_EQOS_DMA_CH0_STATUS];
-        uint32_t enable = gmac->regs[R_EQOS_DMA_CH0_INTERRUPT_ENABLE];
-        uint32_t active = status & enable;
         uint32_t tx_normal = EQOS_DMA_STATUS_TI | EQOS_DMA_STATUS_TBU;
         uint32_t rx_normal = EQOS_DMA_STATUS_RI | EQOS_DMA_STATUS_ERI;
         uint32_t tx_abnormal = EQOS_DMA_STATUS_TPS | EQOS_DMA_STATUS_ETI;
@@ -309,26 +494,40 @@ static void gmac_update_irq(NPCMGMACState *gmac)
                                EQOS_DMA_STATUS_RPS |
                                EQOS_DMA_STATUS_RWT;
 
-        status &= ~(EQOS_DMA_STATUS_NIS | EQOS_DMA_STATUS_AIS);
-        if ((enable & EQOS_DMA_INT_NIE) &&
-            (status & enable & EQOS_DMA_STATUS_NORMAL_MASK)) {
-            status |= EQOS_DMA_STATUS_NIS;
+        for (int channel = 0; channel < EQOS_DMA_CHANNEL_COUNT; channel++) {
+            uint32_t status_reg =
+                EQOS_DMA_CH_REG(channel, STATUS);
+            uint32_t enable_reg =
+                EQOS_DMA_CH_REG(channel, INTERRUPT_ENABLE);
+            uint32_t status = gmac->regs[status_reg];
+            uint32_t enable = gmac->regs[enable_reg];
+            uint32_t active = status & enable;
+            int tx_level;
+            int rx_level;
+
+            status &= ~(EQOS_DMA_STATUS_NIS | EQOS_DMA_STATUS_AIS);
+            if ((enable & EQOS_DMA_INT_NIE) &&
+                (status & enable & EQOS_DMA_STATUS_NORMAL_MASK)) {
+                status |= EQOS_DMA_STATUS_NIS;
+            }
+            if ((enable & EQOS_DMA_INT_AIE) &&
+                (status & enable & EQOS_DMA_STATUS_ABNORMAL_MASK)) {
+                status |= EQOS_DMA_STATUS_AIS;
+            }
+            gmac->regs[status_reg] = status;
+            level |= !!(status & enable & (EQOS_DMA_STATUS_NIS |
+                                           EQOS_DMA_STATUS_AIS));
+            tx_level = ((enable & EQOS_DMA_INT_NIE) &&
+                        (active & tx_normal)) ||
+                       ((enable & EQOS_DMA_INT_AIE) &&
+                        (active & tx_abnormal));
+            rx_level = ((enable & EQOS_DMA_INT_NIE) &&
+                        (active & rx_normal)) ||
+                       ((enable & EQOS_DMA_INT_AIE) &&
+                        (active & rx_abnormal));
+            qemu_set_irq(gmac->tx_irq[channel], tx_level);
+            qemu_set_irq(gmac->rx_irq[channel], rx_level);
         }
-        if ((enable & EQOS_DMA_INT_AIE) &&
-            (status & enable & EQOS_DMA_STATUS_ABNORMAL_MASK)) {
-            status |= EQOS_DMA_STATUS_AIS;
-        }
-        gmac->regs[R_EQOS_DMA_CH0_STATUS] = status;
-        level |= !!(status & enable & (EQOS_DMA_STATUS_NIS |
-                                       EQOS_DMA_STATUS_AIS));
-        tx_level = ((enable & EQOS_DMA_INT_NIE) &&
-                    (active & tx_normal)) ||
-                   ((enable & EQOS_DMA_INT_AIE) &&
-                    (active & tx_abnormal));
-        rx_level = ((enable & EQOS_DMA_INT_NIE) &&
-                    (active & rx_normal)) ||
-                   ((enable & EQOS_DMA_INT_AIE) &&
-                    (active & rx_abnormal));
     }
 
     /* Set the IRQ */
@@ -337,8 +536,12 @@ static void gmac_update_irq(NPCMGMACState *gmac)
                                gmac->regs[R_NPCM_DMA_INTR_ENA],
                                level);
     qemu_set_irq(gmac->irq, level);
-    qemu_set_irq(gmac->tx_irq, tx_level);
-    qemu_set_irq(gmac->rx_irq, rx_level);
+    if (!gmac->s32k3_mode) {
+        for (int channel = 0; channel < NPCM_GMAC_DMA_CHANNELS; channel++) {
+            qemu_set_irq(gmac->tx_irq[channel], 0);
+            qemu_set_irq(gmac->rx_irq[channel], 0);
+        }
+    }
 }
 
 static int gmac_read_rx_desc(dma_addr_t addr, struct NPCMGMACRxDesc *desc)
@@ -694,6 +897,7 @@ static ssize_t gmac_receive(NetClientState *nc, const uint8_t *buf, size_t len)
     uint32_t rx_buf_len, rx_buf_addr;
     struct NPCMGMACRxDesc rx_desc;
     uint16_t transferred = 0;
+    unsigned rx_channel = 0;
     bool eof_transferred = false;
 
     trace_npcm_gmac_packet_receive(DEVICE(gmac)->canonical_path, len);
@@ -702,6 +906,11 @@ static ssize_t gmac_receive(NetClientState *nc, const uint8_t *buf, size_t len)
         return -1;
     }
     if (gmac->s32k3_mode) {
+        rx_channel = eqos_rx_dma_channel(gmac, buf, len);
+        if (!(gmac->regs[EQOS_DMA_CH_REG(rx_channel, RX_CONTROL)] &
+              EQOS_DMA_CH0_RX_CONTROL_SR)) {
+            return len;
+        }
         goto eqos_receive;
     }
     if (!gmac->regs[R_NPCM_DMA_HOST_RX_DESC]) {
@@ -868,21 +1077,26 @@ static ssize_t gmac_receive(NetClientState *nc, const uint8_t *buf, size_t len)
 
 eqos_receive:
     {
-        uint32_t list = gmac->regs[R_EQOS_DMA_CH0_RXDESC_LIST_ADDRESS];
-        uint32_t tail = gmac->regs[R_EQOS_DMA_CH0_RXDESC_TAIL_POINTER];
+        uint32_t list =
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, RXDESC_LIST_ADDRESS)];
+        uint32_t tail =
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, RXDESC_TAIL_POINTER)];
         uint32_t current =
-            gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_RXDESC];
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, CURRENT_APP_RXDESC)];
         uint32_t ring_count =
-            (gmac->regs[R_EQOS_DMA_CH0_RX_CONTROL2] & 0x3ff) + 1;
+            (gmac->regs[EQOS_DMA_CH_REG(rx_channel, RX_CONTROL2)] &
+             0x3ff) + 1;
         uint32_t dsl =
-            (gmac->regs[R_EQOS_DMA_CH0_CONTROL] >>
+            (gmac->regs[EQOS_DMA_CH_REG(rx_channel, CONTROL)] >>
              EQOS_DMA_CH0_CONTROL_DSL_SHIFT) &
             EQOS_DMA_CH0_CONTROL_DSL_MASK;
         uint32_t stride = sizeof(struct NPCMGMACRxDesc) +
                           dsl * EQOS_DMA_BUS_WIDTH_BYTES;
         uint64_t ring_end = (uint64_t)list + (uint64_t)ring_count * stride;
-        uint32_t rx_control = gmac->regs[R_EQOS_DMA_CH0_RX_CONTROL];
-        uint32_t rx_control2 = gmac->regs[R_EQOS_DMA_CH0_RX_CONTROL2];
+        uint32_t rx_control =
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, RX_CONTROL)];
+        uint32_t rx_control2 =
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, RX_CONTROL2)];
         uint32_t rx_buffer_size =
             extract32(rx_control, 4, 11) * EQOS_DMA_BUS_WIDTH_BYTES;
         uint32_t buffer1_size =
@@ -911,13 +1125,14 @@ eqos_receive:
             qemu_log_mask(LOG_GUEST_ERROR,
                           "%s: invalid EQOS RX descriptor ring\n",
                           DEVICE(gmac)->canonical_path);
-            gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, STATUS)] |=
+                EQOS_DMA_STATUS_FBE;
             gmac_update_irq(gmac);
             return len;
         }
 
         if (!gmac_rx_frame_allowed(gmac, buf, len)) {
-            gmac->regs[R_EQOS_DMA_CH0_MISSED_FRAME_CNT]++;
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, MISSED_FRAME_CNT)]++;
             return len;
         }
 
@@ -943,7 +1158,8 @@ eqos_receive:
                 break;
             }
             if (gmac_read_rx_desc(desc_addr, &desc)) {
-                gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+                gmac->regs[EQOS_DMA_CH_REG(rx_channel, STATUS)] |=
+                    EQOS_DMA_STATUS_FBE;
                 gmac_update_irq(gmac);
                 return len;
             }
@@ -967,7 +1183,8 @@ eqos_receive:
                                   "%s: failed EQOS RX buffer write @ 0x%"
                                   PRIx64 "\n",
                                   DEVICE(gmac)->canonical_path, buffer1_addr);
-                    gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+                    gmac->regs[EQOS_DMA_CH_REG(rx_channel, STATUS)] |=
+                        EQOS_DMA_STATUS_FBE;
                     gmac_update_irq(gmac);
                     return len;
                 }
@@ -987,7 +1204,8 @@ eqos_receive:
                     qemu_log_mask(LOG_GUEST_ERROR,
                                   "%s: failed EQOS RX buffer write @ 0x%x\n",
                                   DEVICE(gmac)->canonical_path, desc.rdes2);
-                    gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+                    gmac->regs[EQOS_DMA_CH_REG(rx_channel, STATUS)] |=
+                        EQOS_DMA_STATUS_FBE;
                     gmac_update_irq(gmac);
                     return len;
                 }
@@ -1001,7 +1219,8 @@ eqos_receive:
                 desc.rdes2 = 0;
                 desc.rdes3 = first_descriptor ? EQOS_RDES3_FD : 0;
                 if (gmac_write_rx_desc(desc_addr, &desc)) {
-                    gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+                    gmac->regs[EQOS_DMA_CH_REG(rx_channel, STATUS)] |=
+                        EQOS_DMA_STATUS_FBE;
                     gmac_update_irq(gmac);
                     return len;
                 }
@@ -1032,11 +1251,14 @@ eqos_receive:
         }
 
         if (unavailable) {
-            gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_RBU;
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, STATUS)] |=
+                EQOS_DMA_STATUS_RBU;
         }
-        gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_RXDESC] = current;
+        gmac->regs[EQOS_DMA_CH_REG(rx_channel, CURRENT_APP_RXDESC)] =
+            current;
         if (!remaining && interrupt_on_completion) {
-            gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_RI;
+            gmac->regs[EQOS_DMA_CH_REG(rx_channel, STATUS)] |=
+            EQOS_DMA_STATUS_RI;
         }
         gmac_update_irq(gmac);
         return len;
@@ -1196,20 +1418,21 @@ static void gmac_try_send_next_packet(NPCMGMACState *gmac)
     }
 }
 
-static void eqos_try_send_packets(NPCMGMACState *gmac)
+static void eqos_try_send_packets(NPCMGMACState *gmac, unsigned channel)
 {
     uint32_t list_addr =
-        gmac->regs[R_EQOS_DMA_CH0_TXDESC_LIST_ADDRESS];
+        gmac->regs[EQOS_DMA_CH_REG(channel, TXDESC_LIST_ADDRESS)];
     uint32_t tail_addr =
-        gmac->regs[R_EQOS_DMA_CH0_TXDESC_TAIL_POINTER];
+        gmac->regs[EQOS_DMA_CH_REG(channel, TXDESC_TAIL_POINTER)];
     uint32_t desc_addr =
         gmac->regs[gmac->s32k3_mode ?
-                   R_EQOS_DMA_CH0_CURRENT_APP_TXDESC :
+                   EQOS_DMA_CH_REG(channel, CURRENT_APP_TXDESC) :
                    R_NPCM_EQOS_DMA_CH0_CURRENT_APP_TXDESC];
     uint32_t ring_len =
-        (gmac->regs[R_EQOS_DMA_CH0_TXDESC_RING_LENGTH] & 0xffff) + 1;
+        (gmac->regs[EQOS_DMA_CH_REG(channel, TXDESC_RING_LENGTH)] &
+         0xffff) + 1;
     uint32_t dsl =
-        (gmac->regs[R_EQOS_DMA_CH0_CONTROL] >>
+        (gmac->regs[EQOS_DMA_CH_REG(channel, CONTROL)] >>
          EQOS_DMA_CH0_CONTROL_DSL_SHIFT) &
         EQOS_DMA_CH0_CONTROL_DSL_MASK;
     uint32_t stride = gmac->s32k3_mode ?
@@ -1222,7 +1445,7 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
         return;
     }
 
-    if (!(gmac->regs[R_EQOS_DMA_CH0_TX_CONTROL] &
+    if (!(gmac->regs[EQOS_DMA_CH_REG(channel, TX_CONTROL)] &
           EQOS_DMA_CH0_TX_CONTROL_ST)) {
         return;
     }
@@ -1244,7 +1467,7 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: invalid EQOS TX descriptor ring\n",
                       DEVICE(gmac)->canonical_path);
-        gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+        gmac->regs[EQOS_DMA_CH_REG(channel, STATUS)] |= EQOS_DMA_STATUS_FBE;
         gmac_update_irq(gmac);
         return;
     }
@@ -1266,7 +1489,8 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
                           "%s: EQOS TX descriptor @ 0x%x can't be read\n",
                           DEVICE(gmac)->canonical_path, desc_addr);
             if (gmac->s32k3_mode) {
-                gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+                gmac->regs[EQOS_DMA_CH_REG(channel, STATUS)] |=
+                    EQOS_DMA_STATUS_FBE;
                 gmac_update_irq(gmac);
             }
             return;
@@ -1316,7 +1540,7 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
                               "%s: Failed to read EQOS buffer @ 0x%"
                               PRIx64 "\n", __func__, buffer1_addr);
                 if (gmac->s32k3_mode) {
-                    gmac->regs[R_EQOS_DMA_CH0_STATUS] |=
+                    gmac->regs[EQOS_DMA_CH_REG(channel, STATUS)] |=
                         EQOS_DMA_STATUS_FBE;
                     gmac_update_irq(gmac);
                 }
@@ -1351,7 +1575,8 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
         desc.tdes3 &= ~EQOS_TDES3_OWN;
         if (gmac_write_tx_desc(desc_addr, &desc)) {
             if (gmac->s32k3_mode) {
-                gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_FBE;
+                gmac->regs[EQOS_DMA_CH_REG(channel, STATUS)] |=
+                    EQOS_DMA_STATUS_FBE;
                 gmac_update_irq(gmac);
             }
             return;
@@ -1359,7 +1584,8 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
         if ((desc.tdes2 & EQOS_TDES2_IOC) &&
             (desc.tdes3 & EQOS_TDES3_LD)) {
             if (gmac->s32k3_mode) {
-                gmac->regs[R_EQOS_DMA_CH0_STATUS] |= EQOS_DMA_STATUS_TI;
+                gmac->regs[EQOS_DMA_CH_REG(channel, STATUS)] |=
+                    EQOS_DMA_STATUS_TI;
             } else {
                 gmac->regs[R_NPCM_DMA_STATUS] |= NPCM_DMA_STATUS_TI;
             }
@@ -1371,7 +1597,7 @@ static void eqos_try_send_packets(NPCMGMACState *gmac)
             desc_addr = list_addr;
         }
         gmac->regs[gmac->s32k3_mode ?
-                   R_EQOS_DMA_CH0_CURRENT_APP_TXDESC :
+                   EQOS_DMA_CH_REG(channel, CURRENT_APP_TXDESC) :
                    R_NPCM_EQOS_DMA_CH0_CURRENT_APP_TXDESC] = desc_addr;
     }
 }
@@ -1502,6 +1728,8 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
     case A_NPCM_DMA_CUR_TX_BUF_ADDR:
     case A_NPCM_DMA_CUR_RX_BUF_ADDR:
     case A_EQOS_DMA_CH0_CURRENT_APP_RXDESC:
+    case A_EQOS_DMA_CH1_CURRENT_APP_RXDESC:
+    case A_EQOS_DMA_CH2_CURRENT_APP_RXDESC:
     case A_NPCM_DMA_HW_FEATURE:
         qemu_log_mask(LOG_GUEST_ERROR,
                       "%s: Write of read-only reg: offset: 0x%04" HWADDR_PRIx
@@ -1515,7 +1743,10 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
             qemu_flush_queued_packets(qemu_get_queue(gmac->nic));
         }
         if (gmac->s32k3_mode && (v & BIT(1))) {
-            eqos_try_send_packets(gmac);
+            for (unsigned channel = 0;
+                 channel < EQOS_DMA_CHANNEL_COUNT; channel++) {
+                eqos_try_send_packets(gmac, channel);
+            }
         }
         break;
 
@@ -1527,7 +1758,17 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
         }
         break;
 
+    case A_EQOS_MAC_MDIO_ADDRESS:
+        if (gmac->s32k3_mode && (v & EQOS_MDIO_ADDRESS_GB)) {
+            eqos_mdio_access(gmac, v);
+        } else {
+            gmac->regs[offset / sizeof(uint32_t)] = v;
+        }
+        break;
+
     case A_EQOS_DMA_CH0_CURRENT_APP_TXDESC:
+    case A_EQOS_DMA_CH1_CURRENT_APP_TXDESC:
+    case A_EQOS_DMA_CH2_CURRENT_APP_TXDESC:
         if (gmac->s32k3_mode) {
             qemu_log_mask(LOG_GUEST_ERROR,
                           "%s: Write of read-only reg: offset: 0x%04"
@@ -1539,6 +1780,8 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
         break;
 
     case A_EQOS_DMA_CH0_MISSED_FRAME_CNT:
+    case A_EQOS_DMA_CH1_MISSED_FRAME_CNT:
+    case A_EQOS_DMA_CH2_MISSED_FRAME_CNT:
         if (gmac->s32k3_mode) {
             qemu_log_mask(LOG_GUEST_ERROR,
                           "%s: Write of read-only reg: offset: 0x%04"
@@ -1643,19 +1886,27 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
         break;
 
     case A_EQOS_DMA_CH0_TX_CONTROL:
+    case A_EQOS_DMA_CH1_TX_CONTROL:
+    case A_EQOS_DMA_CH2_TX_CONTROL:
         gmac->regs[offset / sizeof(uint32_t)] = v;
-        eqos_try_send_packets(gmac);
+        eqos_try_send_packets(gmac, gmac->s32k3_mode ?
+                              eqos_dma_channel_from_offset(offset) : 0);
         break;
 
     case A_EQOS_DMA_CH0_TXDESC_TAIL_POINTER:
+    case A_EQOS_DMA_CH1_TXDESC_TAIL_POINTER:
+    case A_EQOS_DMA_CH2_TXDESC_TAIL_POINTER:
         gmac->regs[offset / sizeof(uint32_t)] = v;
         if (gmac->s32k3_mode) {
-            uint32_t list =
-                gmac->regs[R_EQOS_DMA_CH0_TXDESC_LIST_ADDRESS];
+            unsigned channel = eqos_dma_channel_from_offset(offset);
+            uint32_t list = gmac->regs[
+                EQOS_DMA_CH_REG(channel, TXDESC_LIST_ADDRESS)];
             uint32_t count =
-                (gmac->regs[R_EQOS_DMA_CH0_TXDESC_RING_LENGTH] & 0xffff) + 1;
+                (gmac->regs[EQOS_DMA_CH_REG(channel,
+                                            TXDESC_RING_LENGTH)] &
+                 0xffff) + 1;
             uint32_t dsl =
-                (gmac->regs[R_EQOS_DMA_CH0_CONTROL] >>
+                (gmac->regs[EQOS_DMA_CH_REG(channel, CONTROL)] >>
                  EQOS_DMA_CH0_CONTROL_DSL_SHIFT) &
                 EQOS_DMA_CH0_CONTROL_DSL_MASK;
             uint32_t stride = sizeof(struct NPCMGMACTxDesc) +
@@ -1663,20 +1914,30 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
             uint64_t ring_end = (uint64_t)list + (uint64_t)count * stride;
 
             if (ring_end <= UINT32_MAX &&
-                gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_TXDESC] == ring_end &&
+                gmac->regs[EQOS_DMA_CH_REG(channel,
+                                           CURRENT_APP_TXDESC)] == ring_end &&
                 v != ring_end) {
-                gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_TXDESC] = list;
+                gmac->regs[EQOS_DMA_CH_REG(channel,
+                                           CURRENT_APP_TXDESC)] = list;
             }
+            eqos_try_send_packets(gmac, channel);
+        } else {
+            eqos_try_send_packets(gmac, 0);
         }
-        eqos_try_send_packets(gmac);
         break;
 
     case A_EQOS_DMA_CH0_CONTROL:
+    case A_EQOS_DMA_CH1_CONTROL:
+    case A_EQOS_DMA_CH2_CONTROL:
     case A_EQOS_DMA_CH0_TXDESC_RING_LENGTH:
+    case A_EQOS_DMA_CH1_TXDESC_RING_LENGTH:
+    case A_EQOS_DMA_CH2_TXDESC_RING_LENGTH:
         gmac->regs[offset / sizeof(uint32_t)] = v;
         break;
 
     case A_EQOS_DMA_CH0_INTERRUPT_ENABLE:
+    case A_EQOS_DMA_CH1_INTERRUPT_ENABLE:
+    case A_EQOS_DMA_CH2_INTERRUPT_ENABLE:
         gmac->regs[offset / sizeof(uint32_t)] = v;
         if (gmac->s32k3_mode) {
             gmac_update_irq(gmac);
@@ -1684,44 +1945,63 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
         break;
 
     case A_EQOS_DMA_CH0_TXDESC_LIST_ADDRESS:
+    case A_EQOS_DMA_CH1_TXDESC_LIST_ADDRESS:
+    case A_EQOS_DMA_CH2_TXDESC_LIST_ADDRESS:
         gmac->regs[offset / sizeof(uint32_t)] = v;
-        if (gmac->s32k3_mode &&
-            !(gmac->regs[R_EQOS_DMA_CH0_TX_CONTROL] &
-              EQOS_DMA_CH0_TX_CONTROL_ST)) {
-            gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_TXDESC] = v;
+        if (gmac->s32k3_mode) {
+            unsigned channel = eqos_dma_channel_from_offset(offset);
+            if (!(gmac->regs[EQOS_DMA_CH_REG(channel, TX_CONTROL)] &
+                  EQOS_DMA_CH0_TX_CONTROL_ST)) {
+                gmac->regs[EQOS_DMA_CH_REG(channel,
+                                           CURRENT_APP_TXDESC)] = v;
+            }
         }
         break;
 
     case A_EQOS_DMA_CH0_RX_CONTROL:
+    case A_EQOS_DMA_CH1_RX_CONTROL:
+    case A_EQOS_DMA_CH2_RX_CONTROL:
         gmac->regs[offset / sizeof(uint32_t)] = v;
         if (gmac->s32k3_mode) {
+            unsigned channel = eqos_dma_channel_from_offset(offset);
             if ((v & EQOS_DMA_CH0_RX_CONTROL_SR) &&
-                !gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_RXDESC]) {
-                gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_RXDESC] =
-                    gmac->regs[R_EQOS_DMA_CH0_RXDESC_LIST_ADDRESS];
+                !gmac->regs[EQOS_DMA_CH_REG(channel,
+                                            CURRENT_APP_RXDESC)]) {
+                gmac->regs[EQOS_DMA_CH_REG(channel, CURRENT_APP_RXDESC)] =
+                    gmac->regs[EQOS_DMA_CH_REG(channel,
+                                               RXDESC_LIST_ADDRESS)];
             }
             qemu_flush_queued_packets(qemu_get_queue(gmac->nic));
         }
         break;
 
     case A_EQOS_DMA_CH0_RXDESC_LIST_ADDRESS:
+    case A_EQOS_DMA_CH1_RXDESC_LIST_ADDRESS:
+    case A_EQOS_DMA_CH2_RXDESC_LIST_ADDRESS:
         gmac->regs[offset / sizeof(uint32_t)] = v;
-        if (gmac->s32k3_mode &&
-            !(gmac->regs[R_EQOS_DMA_CH0_RX_CONTROL] &
-              EQOS_DMA_CH0_RX_CONTROL_SR)) {
-            gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_RXDESC] = v;
+        if (gmac->s32k3_mode) {
+            unsigned channel = eqos_dma_channel_from_offset(offset);
+            if (!(gmac->regs[EQOS_DMA_CH_REG(channel, RX_CONTROL)] &
+                  EQOS_DMA_CH0_RX_CONTROL_SR)) {
+                gmac->regs[EQOS_DMA_CH_REG(channel,
+                                           CURRENT_APP_RXDESC)] = v;
+            }
         }
         break;
 
     case A_EQOS_DMA_CH0_RXDESC_TAIL_POINTER:
+    case A_EQOS_DMA_CH1_RXDESC_TAIL_POINTER:
+    case A_EQOS_DMA_CH2_RXDESC_TAIL_POINTER:
         gmac->regs[offset / sizeof(uint32_t)] = v;
         if (gmac->s32k3_mode) {
-            uint32_t list =
-                gmac->regs[R_EQOS_DMA_CH0_RXDESC_LIST_ADDRESS];
+            unsigned channel = eqos_dma_channel_from_offset(offset);
+            uint32_t list = gmac->regs[
+                EQOS_DMA_CH_REG(channel, RXDESC_LIST_ADDRESS)];
             uint32_t count =
-                (gmac->regs[R_EQOS_DMA_CH0_RX_CONTROL2] & 0x3ff) + 1;
+                (gmac->regs[EQOS_DMA_CH_REG(channel, RX_CONTROL2)] &
+                 0x3ff) + 1;
             uint32_t dsl =
-                (gmac->regs[R_EQOS_DMA_CH0_CONTROL] >>
+                (gmac->regs[EQOS_DMA_CH_REG(channel, CONTROL)] >>
                  EQOS_DMA_CH0_CONTROL_DSL_SHIFT) &
                 EQOS_DMA_CH0_CONTROL_DSL_MASK;
             uint32_t stride = sizeof(struct NPCMGMACRxDesc) +
@@ -1729,19 +2009,25 @@ static void npcm_gmac_write(void *opaque, hwaddr offset,
             uint64_t ring_end = (uint64_t)list + (uint64_t)count * stride;
 
             if (ring_end <= UINT32_MAX &&
-                gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_RXDESC] == ring_end &&
+                gmac->regs[EQOS_DMA_CH_REG(channel,
+                                           CURRENT_APP_RXDESC)] == ring_end &&
                 v != ring_end) {
-                gmac->regs[R_EQOS_DMA_CH0_CURRENT_APP_RXDESC] = list;
+                gmac->regs[EQOS_DMA_CH_REG(channel,
+                                           CURRENT_APP_RXDESC)] = list;
             }
             qemu_flush_queued_packets(qemu_get_queue(gmac->nic));
         }
         break;
 
     case A_EQOS_DMA_CH0_RX_CONTROL2:
+    case A_EQOS_DMA_CH1_RX_CONTROL2:
+    case A_EQOS_DMA_CH2_RX_CONTROL2:
         gmac->regs[offset / sizeof(uint32_t)] = v;
         break;
 
     case A_EQOS_DMA_CH0_STATUS:
+    case A_EQOS_DMA_CH1_STATUS:
+    case A_EQOS_DMA_CH2_STATUS:
         if (gmac->s32k3_mode) {
             gmac->regs[offset / sizeof(uint32_t)] &=
                 ~(v & EQOS_DMA_STATUS_W1C_MASK);
@@ -1836,8 +2122,12 @@ static void npcm_gmac_realize(DeviceState *dev, Error **errp)
                           TYPE_NPCM_GMAC, NPCM_GMAC_REG_SIZE);
     sysbus_init_mmio(sbd, &gmac->iomem);
     sysbus_init_irq(sbd, &gmac->irq);
-    sysbus_init_irq(sbd, &gmac->tx_irq);
-    sysbus_init_irq(sbd, &gmac->rx_irq);
+    for (int channel = 0; channel < NPCM_GMAC_DMA_CHANNELS; channel++) {
+        sysbus_init_irq(sbd, &gmac->tx_irq[channel]);
+    }
+    for (int channel = 0; channel < NPCM_GMAC_DMA_CHANNELS; channel++) {
+        sysbus_init_irq(sbd, &gmac->rx_irq[channel]);
+    }
 
     qemu_macaddr_default_if_unset(&gmac->conf.macaddr);
 

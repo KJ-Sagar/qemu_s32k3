@@ -26,6 +26,7 @@
 
 #define NPCM_GMAC_REG_SIZE 0x4000
 #define NPCM_GMAC_NR_REGS (NPCM_GMAC_REG_SIZE / sizeof(uint32_t))
+#define NPCM_GMAC_DMA_CHANNELS 3
 
 #define NPCM_GMAC_MAX_PHYS 32
 #define NPCM_GMAC_MAX_PHY_REGS 32
@@ -160,8 +161,8 @@ typedef struct NPCMGMACState {
 
     MemoryRegion iomem;
     qemu_irq irq;
-    qemu_irq tx_irq;
-    qemu_irq rx_irq;
+    qemu_irq tx_irq[NPCM_GMAC_DMA_CHANNELS];
+    qemu_irq rx_irq[NPCM_GMAC_DMA_CHANNELS];
 
     NICState *nic;
     NICConf conf;
