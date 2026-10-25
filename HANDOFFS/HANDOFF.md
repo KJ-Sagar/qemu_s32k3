@@ -287,7 +287,8 @@ None of these are blocking — they're the honest list of what a next round of h
 Summary of recent changes:
 
 - Updated `launch_qemu_389.sh` to add CLI options for choosing networking and CAN backends: `--ethernet`, `--ethernet-ifname`, `--can`, `--can-ifname`.
-- Automatic TAP creation and bring-up (function `ensure_tap_interface`) so the host TAP device is created and set up before QEMU starts. This fixes the `nic npcm-gmac.1 has no peer` QEMU warning and the `tap0: That device is not up` tcpdump error observed during testing.
+- Automatic TAP creation and bring-up (function `ensure_tap_interface`) so the host TAP device is created and set up before QEMU starts. This fixes `tap0: That device is not up`; an unconfigured GMAC can still report that it has no peer.
+- The S32K389 machine maps the NIC model aliases `gmac0` and `gmac1` to their corresponding GMAC devices. Without these aliases, a `-nic ... model=gmac0` backend is not matched to the board device, producing `requested NIC ... was not created`, an unconnected netdev, and no GMAC0 peer.
 - Automatic vcan creation and setup for SocketCAN (`--can socketcan` / `--can auto`) so CAN tests can run without manual host-side setup.
 - Added header comments to the launcher with suggested monitor connection examples and recommended launch commands.
 
