@@ -368,10 +368,35 @@ Cleanup (remove auto-created interfaces)
 - Remove vcan:
   sudo ip link delete vcan0
 
-Ethernet demo - TAP
-TAP test:
-sudo scripts/./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
+## 13. TAP Transmit Test ELF
 
-In another terminal confirm the TAP is up and watch traffic:
-sudo ip addr show dev tap0
-sudo tcpdump -i tap0 -n -e
+The source project now builds a TAP-transmit smoke-test variant with internal
+MAC loopback disabled and a recognizable payload. Build it with the ARM
+toolchain:
+
+```bash
+cd /home/kj/QEMU/qemu_s32k3
+make -C Eth_InternalLoopback_S32K389/Debug_FLASH all
+```
+
+Use the newly built ELF (not a potentially stale copy under `ELF/s32k389/`):
+
+```bash
+sudo scripts/launch_qemu_389.sh \
+  --can off \
+  --ethernet tap \
+  --ethernet-ifname tap0 \
+  Eth_InternalLoopback_S32K389/Debug_FLASH/Eth_InternalLoopback_S32K389.elf
+```
+
+With QEMU running, capture the test EtherType from another terminal:
+
+```bash
+sudo tcpdump -i tap0 -n -e -XX 'ether proto 0x88b5'
+```
+
+The guest frame should use source and destination MAC
+`66:55:44:33:22:11` and contain ASCII payload
+`S32K389-QEMU-TAP-TX-TEST-001`. The firmware writes `0x5a` to
+`0x2057ff00` when the driver accepts the transmit request; the TAP capture is
+the check that the frame actually reached the host backend.

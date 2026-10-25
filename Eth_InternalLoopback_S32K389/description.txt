@@ -1,16 +1,20 @@
 1. Example Description
-    This application demonstrates the progress transmit and receive in internal loop back mode.
+    This application is configured as a QEMU TAP transmit smoke test. It sends
+    one recognizable Ethernet frame from GMAC0 to the network backend; it does
+    not wait for a received frame or perform internal MAC loopback.
     1.1 The application software functionality
         - OsIf_Init Initialize timeout
         - Initialize pins to provide the external clock to Tx, Rx signals via the function Port_Init
         - Initialize clock to Tx, Rx signals via the function Mcu_Init.
-        - Enable controller, initialize Tx and Rx buffer via the function Eth_Init
-        - Enable transmit and receive on controller via the function Eth_SetControllerMode(ACTIVE)
-        - Borrow transmit area to load frame via the function Eth_ProvideTxBuffer
-        - Get MAC address via the function Eth_GetPhysAddr
-        - Trigger the transmit frame via Eth_Transmit.
-        - Verify frame is transmitted/ received by functions: Eth_TxConfirmation and Eth_Receive
-        - Disable controller by the function Eth_SetControllerMode(DOWN)
+        - Initialize and activate GMAC0.
+        - Borrow a transmit buffer and fill it with the ASCII payload
+          S32K389-QEMU-TAP-TX-TEST-001.
+        - Transmit the frame to the controller's own MAC address using
+          EtherType 0x88B5, with internal loopback disabled.
+        - Continue polling transmit confirmations. The test result byte at
+          VV_RESULT_ADDRESS is 0x5A when the transmit request is accepted and
+          0x33 when a driver API fails. Confirm actual host-side delivery by
+          capturing the marker on the QEMU TAP interface.
 2. Installation steps
     2.1 Hardware installation
         2.1.1 Supported boards

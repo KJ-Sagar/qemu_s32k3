@@ -221,7 +221,7 @@ static const Gmac_Ip_ConfigType GMAC_0_InitConfigPB_VS_0 =
     /*.txSchedAlgo = */GMAC_SCHED_ALGO_SP,
     /*.speed = */GMAC_SPEED_100M,
     /*.duplex = */GMAC_FULL_DUPLEX,
-    /*.macConfig = */0U | (uint32)GMAC_MAC_CONFIG_CRC_STRIPPING | (uint32)GMAC_MAC_CONFIG_AUTO_PAD | (uint32)GMAC_MAC_CONFIG_LOOPBACK | ((uint32)0U << GMAC_MAC_CONFIGURATION_IPG_SHIFT),
+    /*.macConfig = */0U | (uint32)GMAC_MAC_CONFIG_CRC_STRIPPING | (uint32)GMAC_MAC_CONFIG_AUTO_PAD | ((uint32)0U << GMAC_MAC_CONFIGURATION_IPG_SHIFT),
     /*.extendedMacConfig = */ (uint32)0U,
 #if (STD_ON == GMAC_IP_RX_HEADER_SPLIT)
     /*.extendedMacConfig1 = */ (uint32)0U,
@@ -339,4 +339,3 @@ const Gmac_CtrlConfigType Gmac_aCtrlConfigPB_VS_0[1U] =
 #endif
 
 /** @} */
-

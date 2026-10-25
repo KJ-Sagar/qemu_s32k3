@@ -46,6 +46,8 @@ extern "C" {
 #include "OsIf.h"
 #include "check_example.h"
 
+static const uint8 TxPayload[] = "S32K389-QEMU-TAP-TX-TEST-001";
+
 /*==================================================================================================
 *                          LOCAL TYPEDEFS (STRUCTURES, UNIONS, ENUMS)
 ==================================================================================================*/
@@ -88,18 +90,18 @@ extern "C" {
 *                                       GLOBAL FUNCTIONS
 ==================================================================================================*/
 /**
-* @brief        Transmit & receive in internal loopback mode
-* @details
+* @brief        Transmit a recognizable frame to the Ethernet backend
 */
 int main(void)
 {
-    Eth_RxStatsType RxStatus;
     Eth_BufIdxType BufferIndex;
     uint8 *PayloadBuffer;
     uint16 PayloadLength;
     uint8 Gmac_0_MacAddr[6U] = {0};
-    Eth_RxStatusType Status = ETH_NOT_RECEIVED;
-    boolean Pass = TRUE;
+    boolean Pass = FALSE;
+    boolean ControllerActive = FALSE;
+    uint16 TxPayloadLength = sizeof(TxPayload) - 1U;
+    uint16 i;
 
     OsIf_Init(NULL_PTR);
 
@@ -116,33 +118,50 @@ int main(void)
 
     Eth_43_GMAC_Init(NULL_PTR);
 
-    Eth_43_GMAC_SetControllerMode(EthConf_EthCtrlConfig_EthCtrlConfig_0, ETH_MODE_ACTIVE);
+    if (E_OK != Eth_43_GMAC_SetControllerMode(
+                    EthConf_EthCtrlConfig_EthCtrlConfig_0, ETH_MODE_ACTIVE)) {
+        goto test_done;
+    }
+    ControllerActive = TRUE;
 
-    Eth_43_GMAC_ProvideTxBuffer(EthConf_EthCtrlConfig_EthCtrlConfig_0, 0U, &BufferIndex, &PayloadBuffer, &PayloadLength);
+    PayloadLength = TxPayloadLength;
+    if ((BUFREQ_OK != Eth_43_GMAC_ProvideTxBuffer(
+                          EthConf_EthCtrlConfig_EthCtrlConfig_0, 0U,
+                          &BufferIndex, &PayloadBuffer, &PayloadLength)) ||
+        (PayloadLength < TxPayloadLength)) {
+        goto test_done;
+    }
+
+    for (i = 0U; i < TxPayloadLength; i++) {
+        PayloadBuffer[i] = TxPayload[i];
+    }
 
     Eth_43_GMAC_GetPhysAddr(EthConf_EthCtrlConfig_EthCtrlConfig_0, Gmac_0_MacAddr);
 
-    Eth_43_GMAC_Transmit(EthConf_EthCtrlConfig_EthCtrlConfig_0, BufferIndex, (Eth_FrameType)46U, TRUE, 46U, Gmac_0_MacAddr);
-
+    if (E_OK != Eth_43_GMAC_Transmit(
+                    EthConf_EthCtrlConfig_EthCtrlConfig_0, BufferIndex,
+                    (Eth_FrameType)0x88B5U, TRUE, TxPayloadLength,
+                    Gmac_0_MacAddr)) {
+        goto test_done;
+    }
     Eth_43_GMAC_TxConfirmation(EthConf_EthCtrlConfig_EthCtrlConfig_0);
 
-    while (RxStatus.RxStatsPkts < 1U)
-    {
-        Eth_43_GMAC_GetRxStats(EthConf_EthCtrlConfig_EthCtrlConfig_0, &RxStatus);
-    }
-    
-    Eth_43_GMAC_Receive(EthConf_EthCtrlConfig_EthCtrlConfig_0, 0U, &Status);
+    Pass = TRUE;
 
-    if (ETH_RECEIVED != Status)
-    {
-        Pass = FALSE;
-    }
-
-    Eth_43_GMAC_SetControllerMode(EthConf_EthCtrlConfig_EthCtrlConfig_0, ETH_MODE_DOWN);
-
+test_done:
     Exit_Example(Pass);
 
-    return 0;
+    if (!Pass) {
+        if (ControllerActive) {
+            (void)Eth_43_GMAC_SetControllerMode(
+                EthConf_EthCtrlConfig_EthCtrlConfig_0, ETH_MODE_DOWN);
+        }
+        return 1;
+    }
+
+    while (TRUE) {
+        Eth_43_GMAC_TxConfirmation(EthConf_EthCtrlConfig_EthCtrlConfig_0);
+    }
 }
 
 

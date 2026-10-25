@@ -844,7 +844,7 @@
                                        <setting name="MAC_CONFIG_CRC_STRIPPING" value="true"/>
                                        <setting name="MAC_CONFIG_AUTO_PAD" value="true"/>
                                        <setting name="MAC_CONFIG_JUMBO_PKT_EN" value="false"/>
-                                       <setting name="MAC_CONFIG_LOOPBACK" value="true"/>
+                                       <setting name="MAC_CONFIG_LOOPBACK" value="false"/>
                                        <setting name="MAC_CONFIG_ENABLE_CRS_FD" value="false"/>
                                        <setting name="MAC_CONFIG_DISABLE_RECEIVE_OWN_HD" value="false"/>
                                        <setting name="MAC_CONFIG_DISABLE_CRS_HD" value="false"/>
