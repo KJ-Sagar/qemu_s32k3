@@ -287,7 +287,8 @@ None of these are blocking — they're the honest list of what a next round of h
 Summary of recent changes:
 
 - Updated `launch_qemu_389.sh` to add CLI options for choosing networking and CAN backends: `--ethernet`, `--ethernet-ifname`, `--can`, `--can-ifname`.
-- Automatic TAP creation and bring-up (function `ensure_tap_interface`) so the host TAP device is created and set up before QEMU starts. This fixes the `nic npcm-gmac.1 has no peer` QEMU warning and the `tap0: That device is not up` tcpdump error observed during testing.
+- Automatic TAP creation and bring-up (function `ensure_tap_interface`) so the host TAP device is created and set up before QEMU starts. This fixes `tap0: That device is not up`; an unconfigured GMAC can still report that it has no peer.
+- The S32K389 machine maps the NIC model aliases `gmac0` and `gmac1` to their corresponding GMAC devices. Without these aliases, a `-nic ... model=gmac0` backend is not matched to the board device, producing `requested NIC ... was not created`, an unconnected netdev, and no GMAC0 peer.
 - Automatic vcan creation and setup for SocketCAN (`--can socketcan` / `--can auto`) so CAN tests can run without manual host-side setup.
 - Added header comments to the launcher with suggested monitor connection examples and recommended launch commands.
 
@@ -367,10 +368,35 @@ Cleanup (remove auto-created interfaces)
 - Remove vcan:
   sudo ip link delete vcan0
 
-Ethernet demo - TAP
-TAP test:
-sudo scripts/./launch_qemu_389.sh --ethernet tap --ethernet-ifname tap0 ELF/s32k389/Eth_InternalLoopback_S32K389.elf
+## 13. TAP Transmit Test ELF
 
-In another terminal confirm the TAP is up and watch traffic:
-sudo ip addr show dev tap0
-sudo tcpdump -i tap0 -n -e
+The source project now builds a TAP-transmit smoke-test variant with internal
+MAC loopback disabled and a recognizable payload. Build it with the ARM
+toolchain:
+
+```bash
+cd /home/kj/QEMU/qemu_s32k3
+make -C Eth_InternalLoopback_S32K389/Debug_FLASH all
+```
+
+Use the newly built ELF (not a potentially stale copy under `ELF/s32k389/`):
+
+```bash
+sudo scripts/launch_qemu_389.sh \
+  --can off \
+  --ethernet tap \
+  --ethernet-ifname tap0 \
+  Eth_InternalLoopback_S32K389/Debug_FLASH/Eth_InternalLoopback_S32K389.elf
+```
+
+With QEMU running, capture the test EtherType from another terminal:
+
+```bash
+sudo tcpdump -i tap0 -n -e -XX 'ether proto 0x88b5'
+```
+
+The guest frame should use source and destination MAC
+`66:55:44:33:22:11` and contain ASCII payload
+`S32K389-QEMU-TAP-TX-TEST-001`. The firmware writes `0x5a` to
+`0x2057ff00` when the driver accepts the transmit request; the TAP capture is
+the check that the frame actually reached the host backend.
