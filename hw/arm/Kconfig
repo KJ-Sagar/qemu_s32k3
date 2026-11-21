@@ -731,7 +731,16 @@ config S32K388
     select ARM_V7M
     select S32K3_UART
     select S32K3_FLEXCAN
+    select S32K3_LPSPI
+    select S32K3_LPI2C
+    select S32K3_SWT
+    select S32K3_CRC
+    select S32K3_ADC
+    select S32K3_EMIOS
+    select S32K3_EDMA
     select NPCM_GMAC
+    select S32K3_QSPI
+    select S32K3_SAI
 
 config S32K389
     bool
