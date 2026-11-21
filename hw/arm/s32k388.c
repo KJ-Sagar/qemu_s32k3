@@ -12,6 +12,15 @@
 #include "hw/char/s32k3_uart.h"
 #include "hw/net/s32k3_flexcan.h"
 #include "hw/char/s32k3_flexio_uart.h"
+#include "hw/ssi/s32k3_lpspi.h"
+#include "hw/i2c/s32k3_lpi2c.h"
+#include "hw/watchdog/s32k3_swt.h"
+#include "hw/misc/s32k3_crc.h"
+#include "hw/adc/s32k3_adc.h"
+#include "hw/timer/s32k3_emios.h"
+#include "hw/dma/s32k3_edma.h"
+#include "hw/ssi/s32k3_qspi.h"
+#include "hw/audio/s32k3_sai.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/machines-qom.h"
 #include "hw/core/qdev-properties.h"
@@ -25,6 +34,9 @@
 #include <stdio.h>
 #include <time.h>
 
+static void (*const s32k388_swt_trigger_link_anchor)(uint32_t, Error **)
+    __attribute__((used)) =
+    s32k3_swt_trigger;
 
 static uint64_t s32k388_boot_status_read(void *opaque, hwaddr offset, unsigned size) {
     switch (offset) {
@@ -143,6 +155,27 @@ static void s32k388_add_zero_stub(MemoryRegion *system_memory,
     memory_region_add_subregion_overlap(system_memory, base, mr, 1);
 }
 
+static bool s32k388_realize_sysbus_device(DeviceState *dev,
+                                           ARMv7MState *armv7m,
+                                           hwaddr base, int irq,
+                                           const char *peripheral_name)
+{
+    Error *local_err = NULL;
+
+    if (!sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &local_err)) {
+        error_reportf_err(local_err, "Failed to realize %s: ", peripheral_name);
+        return false;
+    }
+
+    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 0, base, 1);
+    if (irq >= 0) {
+        sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
+                           qdev_get_gpio_in(DEVICE(armv7m), irq));
+    }
+
+    return true;
+}
+
 static void s32k388_init_flexcan(S32K388State *s, ARMv7MState *armv7m) {
     static const hwaddr flexcan_bases[S32K388_CAN_COUNT] = {
         S32K3_FLEXCAN0_BASE,
@@ -150,7 +183,9 @@ static void s32k388_init_flexcan(S32K388State *s, ARMv7MState *armv7m) {
         S32K3_FLEXCAN2_BASE,
         S32K3_FLEXCAN3_BASE,
         S32K3_FLEXCAN4_BASE,
-        S32K3_FLEXCAN5_BASE
+        S32K3_FLEXCAN5_BASE,
+        S32K3_FLEXCAN6_BASE,
+        S32K3_FLEXCAN7_BASE,
     };
     static const int flexcan_mb_irq[S32K388_CAN_COUNT] = {
         S32K3_FLEXCAN0_MB_IRQ,
@@ -158,10 +193,12 @@ static void s32k388_init_flexcan(S32K388State *s, ARMv7MState *armv7m) {
         S32K3_FLEXCAN2_MB_IRQ,
         S32K3_FLEXCAN3_MB_IRQ,
         S32K3_FLEXCAN4_MB_IRQ,
-        S32K3_FLEXCAN5_MB_IRQ
+        S32K3_FLEXCAN5_MB_IRQ,
+        S32K3_FLEXCAN6_MB_IRQ,
+        S32K3_FLEXCAN7_MB_IRQ,
     };
     static const uint32_t flexcan_instance[S32K388_CAN_COUNT] = {
-        0, 1, 2, 3, 4, 5
+        0, 1, 2, 3, 4, 5, 6, 7
     };
     Error *local_err = NULL;
 
@@ -181,11 +218,138 @@ static void s32k388_init_flexcan(S32K388State *s, ARMv7MState *armv7m) {
             return;
         }
 
-        sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, flexcan_bases[i]);
+        sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 0, flexcan_bases[i], 1);
         sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(DEVICE(armv7m), flexcan_mb_irq[i]));
     }
 
     qemu_log_mask(CPU_LOG_INT, "FlexCAN instances initialized\n");
+}
+
+static void s32k388_init_lpspi(S32K388State *s, ARMv7MState *armv7m)
+{
+    static const hwaddr bases[S32K388_NUM_LPSPI] = {
+        S32K3_LPSPI0_BASE, S32K3_LPSPI1_BASE, S32K3_LPSPI2_BASE,
+        S32K3_LPSPI3_BASE, S32K3_LPSPI4_BASE, S32K3_LPSPI5_BASE,
+    };
+    static const int irqs[S32K388_NUM_LPSPI] = {
+        S32K3_LPSPI0_IRQ, S32K3_LPSPI1_IRQ, S32K3_LPSPI2_IRQ,
+        S32K3_LPSPI3_IRQ, S32K3_LPSPI4_IRQ, S32K3_LPSPI5_IRQ,
+    };
+
+    for (int i = 0; i < S32K388_NUM_LPSPI; i++) {
+        DeviceState *dev = qdev_new(TYPE_S32K3_LPSPI);
+
+        s->lpspi[i] = dev;
+        qdev_prop_set_uint32(dev, "lpspi-id", i);
+        if (!s32k388_realize_sysbus_device(dev, armv7m, bases[i], irqs[i],
+                                            "LPSPI")) {
+            return;
+        }
+    }
+}
+
+static void s32k388_init_lpi2c(S32K388State *s, ARMv7MState *armv7m)
+{
+    static const hwaddr bases[S32K388_NUM_LPI2C] = {
+        S32K3_LPI2C0_BASE, S32K3_LPI2C1_BASE,
+    };
+    static const int irqs[S32K388_NUM_LPI2C] = {
+        S32K3_LPI2C0_IRQ, S32K3_LPI2C1_IRQ,
+    };
+
+    for (int i = 0; i < S32K388_NUM_LPI2C; i++) {
+        DeviceState *dev = qdev_new(TYPE_S32K3_LPI2C);
+
+        s->lpi2c[i] = dev;
+        qdev_prop_set_uint32(dev, "lpi2c-id", i);
+        if (!s32k388_realize_sysbus_device(dev, armv7m, bases[i], irqs[i],
+                                            "LPI2C")) {
+            return;
+        }
+    }
+}
+
+static void s32k388_init_swt(S32K388State *s, ARMv7MState *armv7m)
+{
+    static const hwaddr bases[S32K388_NUM_SWT] = {
+        S32K3_SWT0_BASE, S32K3_SWT1_BASE, S32K3_SWT2_BASE, S32K3_SWT3_BASE,
+    };
+    static const int irqs[S32K388_NUM_SWT] = {
+        S32K3_SWT0_IRQ, S32K3_SWT1_IRQ, S32K3_SWT2_IRQ, S32K3_SWT3_IRQ,
+    };
+
+    for (int i = 0; i < S32K388_NUM_SWT; i++) {
+        DeviceState *dev = qdev_new(TYPE_S32K3_SWT);
+
+        s->swt[i] = dev;
+        qdev_prop_set_uint32(dev, "swt-id", i);
+        if (!s32k388_realize_sysbus_device(dev, armv7m, bases[i], irqs[i],
+                                            "SWT")) {
+            return;
+        }
+    }
+}
+
+static void s32k388_init_adc(S32K388State *s, ARMv7MState *armv7m)
+{
+    static const hwaddr bases[S32K388_NUM_ADC] = {
+        S32K3_ADC0_BASE, S32K3_ADC1_BASE, S32K3_ADC2_BASE,
+    };
+    static const int irqs[S32K388_NUM_ADC] = {
+        S32K3_ADC0_IRQ, S32K3_ADC1_IRQ, S32K3_ADC2_IRQ,
+    };
+
+    for (int i = 0; i < S32K388_NUM_ADC; i++) {
+        DeviceState *dev = qdev_new(TYPE_S32K3_ADC);
+
+        s->adc[i] = dev;
+        qdev_prop_set_uint32(dev, "adc-id", i);
+        if (!s32k388_realize_sysbus_device(dev, armv7m, bases[i], irqs[i],
+                                            "ADC")) {
+            return;
+        }
+    }
+}
+
+static void s32k388_init_emios(S32K388State *s, ARMv7MState *armv7m)
+{
+    static const hwaddr bases[S32K388_NUM_EMIOS] = {
+        S32K3_EMIOS0_BASE, S32K3_EMIOS1_BASE, S32K3_EMIOS2_BASE,
+    };
+    static const int irqs[S32K388_NUM_EMIOS] = {
+        S32K3_EMIOS0_IRQ, S32K3_EMIOS1_IRQ, S32K3_EMIOS2_IRQ,
+    };
+
+    for (int i = 0; i < S32K388_NUM_EMIOS; i++) {
+        DeviceState *dev = qdev_new(TYPE_S32K3_EMIOS);
+
+        s->emios[i] = dev;
+        qdev_prop_set_uint32(dev, "emios-id", i);
+        if (!s32k388_realize_sysbus_device(dev, armv7m, bases[i], irqs[i],
+                                            "eMIOS")) {
+            return;
+        }
+    }
+}
+
+static void s32k388_init_edma(S32K388State *s, ARMv7MState *armv7m)
+{
+    Error *local_err = NULL;
+    DeviceState *dev = qdev_new(TYPE_S32K3_EDMA);
+
+    s->edma = dev;
+    if (!sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &local_err)) {
+        error_reportf_err(local_err, "Failed to realize eDMA: ");
+        return;
+    }
+
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, S32K3_EDMA_MGMT_BASE);
+    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 1, S32K3_EDMA_CH_BASE);
+    for (int i = 0; i < S32K3_EDMA_NUM_CHANNELS; i++) {
+        sysbus_connect_irq(SYS_BUS_DEVICE(dev), i,
+                           qdev_get_gpio_in(DEVICE(armv7m),
+                                            S32K3_EDMA_IRQ_BASE + i));
+    }
 }
 
 static void s32k388_init_gmac(S32K388State *s, MachineState *machine)
@@ -198,24 +362,95 @@ static void s32k388_init_gmac(S32K388State *s, MachineState *machine)
         S32K388_GMAC0_IRQ,
         S32K388_GMAC1_IRQ,
     };
+    static const int gmac_tx_irqs[S32K388_GMAC_COUNT]
+                                  [S32K388_GMAC_DMA_CHANNELS] = {
+        { S32K388_GMAC0_CH0_TX_IRQ, S32K388_GMAC0_CH1_TX_IRQ,
+          S32K388_GMAC0_CH2_TX_IRQ },
+        { S32K388_GMAC1_CH0_TX_IRQ, S32K388_GMAC1_CH1_TX_IRQ,
+          S32K388_GMAC1_CH2_TX_IRQ },
+    };
+    static const int gmac_rx_irqs[S32K388_GMAC_COUNT]
+                                  [S32K388_GMAC_DMA_CHANNELS] = {
+        { S32K388_GMAC0_CH0_RX_IRQ, S32K388_GMAC0_CH1_RX_IRQ,
+          S32K388_GMAC0_CH2_RX_IRQ },
+        { S32K388_GMAC1_CH0_RX_IRQ, S32K388_GMAC1_CH1_RX_IRQ,
+          S32K388_GMAC1_CH2_RX_IRQ },
+    };
     char name[16];
 
     qemu_log_mask(CPU_LOG_INT, "Initializing GMAC Ethernet instances\n");
 
     for (int i = 0; i < S32K388_GMAC_COUNT; i++) {
+        uint8_t mac[6] = { 0x02, 0x00, 0x00, 0x00, 0x00, (uint8_t)i };
+
         snprintf(name, sizeof(name), "gmac%d", i);
         object_initialize_child(OBJECT(machine), name, &s->gmac[i],
                                 TYPE_NPCM_GMAC);
 
-        qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, NULL);
+        object_property_set_bool(OBJECT(&s->gmac[i]), "s32k3-mode", true,
+                                 &error_fatal);
+        qdev_prop_set_macaddr(DEVICE(&s->gmac[i]), "mac", mac);
+        qemu_configure_nic_device(DEVICE(&s->gmac[i]), true, name);
         sysbus_realize(SYS_BUS_DEVICE(&s->gmac[i]), &error_fatal);
-        sysbus_mmio_map(SYS_BUS_DEVICE(&s->gmac[i]), 0, gmac_bases[i]);
+        sysbus_mmio_map_overlap(SYS_BUS_DEVICE(&s->gmac[i]), 0,
+                                gmac_bases[i], 1);
         sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]), 0,
                            qdev_get_gpio_in(DEVICE(&s->armv7m),
                                             gmac_irqs[i]));
+        for (int channel = 0; channel < S32K388_GMAC_DMA_CHANNELS;
+             channel++) {
+            sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]), channel + 1,
+                               qdev_get_gpio_in(DEVICE(&s->armv7m),
+                                                gmac_tx_irqs[i][channel]));
+            sysbus_connect_irq(SYS_BUS_DEVICE(&s->gmac[i]),
+                               channel + 1 + S32K388_GMAC_DMA_CHANNELS,
+                               qdev_get_gpio_in(DEVICE(&s->armv7m),
+                                                gmac_rx_irqs[i][channel]));
+        }
     }
 
     qemu_log_mask(CPU_LOG_INT, "GMAC Ethernet instances initialized\n");
+}
+
+static void s32k388_init_qspi(S32K388State *s, ARMv7MState *armv7m)
+{
+    Error *local_err = NULL;
+    DeviceState *dev = qdev_new(TYPE_S32K3_QSPI);
+
+    s->qspi = dev;
+    if (!sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &local_err)) {
+        error_reportf_err(local_err, "Failed to realize QuadSPI: ");
+        return;
+    }
+
+    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 0, S32K3_QSPI_BASE, 1);
+    sysbus_mmio_map_overlap(SYS_BUS_DEVICE(dev), 1, S32K3_QSPI_ARDB_BASE, 1);
+    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
+                       qdev_get_gpio_in(DEVICE(armv7m), S32K3_QSPI_IRQ));
+}
+
+static void s32k388_init_sai(S32K388State *s, ARMv7MState *armv7m)
+{
+    static const hwaddr bases[S32K388_NUM_SAI] = {
+        S32K3_SAI0_BASE, S32K3_SAI1_BASE,
+    };
+    static const uint32_t param_resets[S32K388_NUM_SAI] = {
+        S32K3_SAI0_PARAM_RESET, S32K3_SAI1_PARAM_RESET,
+    };
+    static const int irqs[S32K388_NUM_SAI] = {
+        S32K3_SAI0_IRQ, S32K3_SAI1_IRQ,
+    };
+
+    for (int i = 0; i < S32K388_NUM_SAI; i++) {
+        DeviceState *dev = qdev_new(TYPE_S32K3_SAI);
+
+        s->sai[i] = dev;
+        qdev_prop_set_uint32(dev, "param-reset", param_resets[i]);
+        if (!s32k388_realize_sysbus_device(dev, armv7m, bases[i], irqs[i],
+                                            "SAI")) {
+            return;
+        }
+    }
 }
 
 static void s32k388_init(MachineState* machine) {
@@ -291,6 +526,11 @@ static void s32k388_init(MachineState* machine) {
     // Implement system bus device
     sysbus_realize(SYS_BUS_DEVICE(&s->armv7m), &error_local);
 
+    // Install the peripheral fallback before device windows so real models
+    // can take priority over unmapped address space.
+    create_unimplemented_device("s32k3x8.peripherals", S32K3_PERIPH_BASE,
+                               16 * MiB);
+
     // Initialize UART
     qemu_log_mask(CPU_LOG_INT, "Initializing UART\n");
     dev = qdev_new(TYPE_S32E8_LPUART);
@@ -300,30 +540,47 @@ static void s32k388_init(MachineState* machine) {
     qdev_prop_set_uint32(dev, "lpuart_id", 3);
     s->uart = dev;
 
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_local);
-    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, S32K3_CONSOLE_LPUART_BASE);
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(DEVICE(&s->armv7m), S32K3_CONSOLE_LPUART_IRQ));
+    if (!s32k388_realize_sysbus_device(dev, &s->armv7m,
+                                        S32K3_CONSOLE_LPUART_BASE,
+                                        S32K3_CONSOLE_LPUART_IRQ,
+                                        "console UART")) {
+        return;
+    }
 
     // Initialize the FlexIO UART channels used for board-level loopback
     dev = qdev_new(TYPE_S32K3_FLEXIO_UART);
     s->flexio = dev;
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_local);
     s32k3_flexio_uart_connect_lpuart(S32K3_FLEXIO_UART(dev), S32K3X8_LPUART(s->uart));
-    sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, S32K3_FLEXIO_BASE);
-    sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0, qdev_get_gpio_in(DEVICE(&s->armv7m), S32K3_FLEXIO_IRQ));
+    if (!s32k388_realize_sysbus_device(dev, &s->armv7m, S32K3_FLEXIO_BASE,
+                                        S32K3_FLEXIO_IRQ, "FlexIO UART")) {
+        return;
+    }
+
+    s32k388_init_lpspi(s, &s->armv7m);
+    s32k388_init_lpi2c(s, &s->armv7m);
+    s32k388_init_swt(s, &s->armv7m);
+
+    dev = qdev_new(TYPE_S32K3_CRC);
+    s->crc = dev;
+    if (!s32k388_realize_sysbus_device(dev, &s->armv7m, S32K3_CRC_BASE, -1,
+                                        "CRC")) {
+        return;
+    }
+
+    s32k388_init_adc(s, &s->armv7m);
+    s32k388_init_emios(s, &s->armv7m);
+    s32k388_init_edma(s, &s->armv7m);
 
     // Initialize FlexCAN devices
     s32k388_init_flexcan(s, &s->armv7m);
 
     // Initialize GMAC Ethernet devices
     s32k388_init_gmac(s, machine);
+    s32k388_init_qspi(s, &s->armv7m);
+    s32k388_init_sai(s, &s->armv7m);
 
-    // Map any missing S32K3 peripheral region used by firmware
-    create_unimplemented_device("s32k3x8.peripherals", S32K3_PERIPH_BASE, 16 * MiB);
     s32k388_add_zero_stub(system_memory, &s->mscm, "s32k388.mscm",
                           S32K3_MSCM_BASE, S32K3_MSCM_SIZE);
-    s32k388_add_zero_stub(system_memory, &s->swt0, "s32k388.swt0",
-                          S32K3_SWT0_BASE, S32K3_SWT0_SIZE);
     s32k388_add_zero_stub(system_memory, &s->rtc, "s32k388.rtc",
                           S32K3_RTC_BASE, S32K3_RTC_SIZE);
     s32k388_add_zero_stub(system_memory, &s->mc_rgm, "s32k388.mc_rgm",
@@ -359,25 +616,14 @@ static void s32k388_class_init(ObjectClass* oc, const void* data) {
 static void s32k388_instance_init(Object *obj)
 {
     S32K388State *s = S32K388(obj);
+    char name[16];
 
-    object_property_add_link(obj, "canbus0", TYPE_CAN_BUS,
-                             (Object **)&s->canbus[0],
-                             object_property_allow_set_link, 0);
-    object_property_add_link(obj, "canbus1", TYPE_CAN_BUS,
-                             (Object **)&s->canbus[1],
-                             object_property_allow_set_link, 0);
-    object_property_add_link(obj, "canbus2", TYPE_CAN_BUS,
-                             (Object **)&s->canbus[2],
-                             object_property_allow_set_link, 0);
-    object_property_add_link(obj, "canbus3", TYPE_CAN_BUS,
-                             (Object **)&s->canbus[3],
-                             object_property_allow_set_link, 0);
-    object_property_add_link(obj, "canbus4", TYPE_CAN_BUS,
-                             (Object **)&s->canbus[4],
-                             object_property_allow_set_link, 0);
-    object_property_add_link(obj, "canbus5", TYPE_CAN_BUS,
-                             (Object **)&s->canbus[5],
-                             object_property_allow_set_link, 0);
+    for (int i = 0; i < S32K388_CAN_COUNT; i++) {
+        snprintf(name, sizeof(name), "canbus%d", i);
+        object_property_add_link(obj, name, TYPE_CAN_BUS,
+                                 (Object **)&s->canbus[i],
+                                 object_property_allow_set_link, 0);
+    }
 }
 
 static const TypeInfo s32k388_type = {
